@@ -174,6 +174,7 @@ export default function App() {
   const [wishInput, setWishInput] = useState('');
   const [lastSentWish, setLastSentWish] = useState<string | null>(null);
   const [wishSentNotification, setWishSentNotification] = useState<string | null>(null);
+  const [wishActivationNotice, setWishActivationNotice] = useState(false);
   const [serverWishes, setServerWishes] = useState<Array<{ id: string; wish: string; date: string }>>([]);
   const [showVaultModal, setShowVaultModal] = useState(false);
 
@@ -183,13 +184,20 @@ export default function App() {
   const [isSendingWish, setIsSendingWish] = useState(false);
   const [emailStatus, setEmailStatus] = useState<string | null>(null);
 
-  // Load server-side wishes
+  // Load server-side wishes & local cache
   const loadWishes = async () => {
     try {
+      const stored = localStorage.getItem('birthday_wishes_inbox');
+      if (stored) {
+        setServerWishes(JSON.parse(stored));
+      }
       const res = await fetch('/api/wishes');
       if (res.ok) {
         const data = await res.json();
-        setServerWishes(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setServerWishes(data);
+          localStorage.setItem('birthday_wishes_inbox', JSON.stringify(data));
+        }
       }
     } catch {}
   };
@@ -244,7 +252,6 @@ export default function App() {
 
   // Scratch card canvas ref & custom context
   const scratchCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [isScratching, setIsScratching] = useState(false);
   const [scratchSurprise] = useState<string>(() => {
     const saved = localStorage.getItem('birthday_scratch_surprise');
     if (!saved || saved === 'Your Favorite Dinner + A Secret Gift Tonight!') {
@@ -1003,43 +1010,70 @@ export default function App() {
     }
   };
 
-  const handleCastWish = (e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleCastWish = async (e: React.MouseEvent<HTMLButtonElement>) => {
     if (!wishInput.trim() || isSendingWish) return;
     const wish = wishInput.trim();
     setIsSendingWish(true);
     setLastSentWish(wish);
     setWishInput(''); // Clears and refreshes the message box every time!
-    setWishSentNotification(`💌 Wish "${wish.length > 30 ? wish.slice(0, 30) + '...' : wish}" was delivered straight to Shubham's Gmail (shubhamecom1999@gmail.com)!`);
 
-    // 1. Deliver directly to shubhamecom1999@gmail.com via FormSubmit
-    fetch('https://formsubmit.co/ajax/shubhamecom1999@gmail.com', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        _subject: `🎂 Birthday Girl's Wish: "${wish.slice(0, 35)}..." 💖`,
-        birthdayWish: wish,
-        date: new Date().toLocaleString(),
-        recipient: 'shubhamecom1999@gmail.com',
-        source: 'Birthday Website'
-      })
-    }).catch(() => {});
+    const newEntry = {
+      id: Date.now().toString(),
+      wish,
+      date: new Date().toLocaleString()
+    };
 
-    // 2. Also dispatch via Gmail API if user connected
-    if (googleUser) {
-      sendWishViaGmailApi(wish, 'shubhamecom1999@gmail.com').catch(() => {});
-    }
+    // 1. Immediately store in state and localStorage
+    setServerWishes((prev) => [newEntry, ...prev]);
+    try {
+      const stored = localStorage.getItem('birthday_wishes_inbox');
+      const list = stored ? JSON.parse(stored) : [];
+      list.unshift(newEntry);
+      localStorage.setItem('birthday_wishes_inbox', JSON.stringify(list));
+    } catch {}
 
-    // 3. Save to server backend
+    // 2. Save to server backend
     fetch('/api/wishes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ wish, date: new Date().toLocaleString() })
+      body: JSON.stringify(newEntry)
     })
       .then(() => loadWishes())
       .catch(() => {});
+
+    // 3. Dispatch to FormSubmit with activation detection
+    try {
+      const res = await fetch('https://formsubmit.co/ajax/shubhamecom1999@gmail.com', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          _subject: `🎂 Birthday Girl's Wish: "${wish.slice(0, 35)}..." 💖`,
+          birthdayWish: wish,
+          date: new Date().toLocaleString(),
+          recipient: 'shubhamecom1999@gmail.com',
+          source: 'Birthday Website'
+        })
+      });
+
+      const data = await res.json().catch(() => null);
+      if (data && data.success === 'false' && data.message?.includes('Activation')) {
+        setWishActivationNotice(true);
+        setWishSentNotification(`💌 Wish "${wish.length > 30 ? wish.slice(0, 30) + '...' : wish}" recorded! FormSubmit sent a 1-time activation email to shubhamecom1999@gmail.com. Please click "Activate Form" in that email once to enable automatic forwarding.`);
+      } else {
+        setWishActivationNotice(false);
+        setWishSentNotification(`💌 Wish "${wish.length > 30 ? wish.slice(0, 30) + '...' : wish}" was delivered straight to Shubham's Gmail (shubhamecom1999@gmail.com)!`);
+      }
+    } catch {
+      setWishSentNotification(`💌 Wish "${wish.length > 30 ? wish.slice(0, 30) + '...' : wish}" saved securely in Shubham's Wish Inbox!`);
+    }
+
+    // 4. Also dispatch via Gmail API if user connected
+    if (googleUser) {
+      sendWishViaGmailApi(wish, 'shubhamecom1999@gmail.com').catch(() => {});
+    }
 
     // Starlight effect
     const rect = e.currentTarget.getBoundingClientRect();
@@ -1063,8 +1097,10 @@ export default function App() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const width = 280;
-    const height = 155;
+    // Measure exact rendered dimensions so scale is 1:1 on any mobile device
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.round(rect.width) || 280;
+    const height = Math.round(rect.height) || 160;
     canvas.width = width;
     canvas.height = height;
 
@@ -1092,11 +1128,11 @@ export default function App() {
     ctx.textAlign = 'center';
     ctx.shadowColor = 'rgba(0,0,0,0.25)';
     ctx.shadowBlur = 4;
-    ctx.fillText('✨ Scratch with finger ✨', width / 2, 70);
+    ctx.fillText('✨ Scratch with finger ✨', width / 2, height / 2 - 8);
     ctx.shadowBlur = 0;
     ctx.font = '12px sans-serif';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.fillText('Rub to reveal surprise! 🎁', width / 2, 94);
+    ctx.fillText('Rub to reveal surprise! 🎁', width / 2, height / 2 + 16);
   };
 
   useEffect(() => {
@@ -1109,43 +1145,120 @@ export default function App() {
     }
   }, [hasEntered]);
 
-  const scratchAt = (clientX: number, clientY: number) => {
+  // Robust native touch & pointer listeners for 100% mobile compatibility
+  useEffect(() => {
+    if (!hasEntered) return;
     const canvas = scratchCanvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    let isDrawing = false;
+    let lastX = 0;
+    let lastY = 0;
 
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.beginPath();
-    ctx.arc(x, y, 20, 0, Math.PI * 2);
-    ctx.fill();
-  };
+    const getPos = (touchOrMouse: { clientX: number; clientY: number }) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / (rect.width || 1);
+      const scaleY = canvas.height / (rect.height || 1);
+      return {
+        x: (touchOrMouse.clientX - rect.left) * scaleX,
+        y: (touchOrMouse.clientY - rect.top) * scaleY
+      };
+    };
 
-  const handleScratchStart = (e: React.TouchEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>) => {
-    setIsScratching(true);
-    if ('touches' in e && e.touches.length > 0) {
-      scratchAt(e.touches[0].clientX, e.touches[0].clientY);
-    } else if ('clientX' in e) {
-      scratchAt(e.clientX, e.clientY);
-    }
-  };
+    const erase = (x1: number, y1: number, x2: number, y2: number) => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth = 44;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
 
-  const handleScratchMove = (e: React.TouchEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isScratching) return;
-    if ('touches' in e && e.touches.length > 0) {
-      scratchAt(e.touches[0].clientX, e.touches[0].clientY);
-    } else if ('clientX' in e) {
-      scratchAt(e.clientX, e.clientY);
-    }
-  };
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
 
-  const handleScratchEnd = () => {
-    setIsScratching(false);
-  };
+      ctx.beginPath();
+      ctx.arc(x2, y2, 22, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    // 1. Touch Events (Mobile Safari & Chrome with non-passive preventDefault)
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+      if (!e.touches || e.touches.length === 0) return;
+      isDrawing = true;
+      const pos = getPos(e.touches[0]);
+      lastX = pos.x;
+      lastY = pos.y;
+      erase(pos.x, pos.y, pos.x, pos.y);
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+      if (!isDrawing || !e.touches || e.touches.length === 0) return;
+      const pos = getPos(e.touches[0]);
+      erase(lastX, lastY, pos.x, pos.y);
+      lastX = pos.x;
+      lastY = pos.y;
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+      isDrawing = false;
+    };
+
+    // 2. Pointer Events (Modern devices & mice)
+    const onPointerDown = (e: PointerEvent) => {
+      e.preventDefault();
+      isDrawing = true;
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {}
+      const pos = getPos(e);
+      lastX = pos.x;
+      lastY = pos.y;
+      erase(pos.x, pos.y, pos.x, pos.y);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!isDrawing) return;
+      e.preventDefault();
+      const pos = getPos(e);
+      erase(lastX, lastY, pos.x, pos.y);
+      lastX = pos.x;
+      lastY = pos.y;
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      isDrawing = false;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {}
+    };
+
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
+
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('touchend', onTouchEnd);
+      canvas.removeEventListener('touchcancel', onTouchEnd);
+
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [hasEntered]);
 
   // Typewriter Letter Observer
   useEffect(() => {
@@ -1664,6 +1777,12 @@ export default function App() {
               </div>
             )}
 
+            {wishActivationNotice && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '12px', padding: '10px 14px', fontSize: '12px', color: '#92400e', textAlign: 'left', lineHeight: 1.45, marginBottom: '10px' }}>
+                <strong>📩 Important Note for Shubham:</strong> FormSubmit sent a <strong>one-time activation email</strong> to <code>shubhamecom1999@gmail.com</code> (check Spam/Updates too). Please open that email and click <strong>&quot;Activate Form&quot;</strong> so all incoming wishes arrive automatically in your inbox!
+              </div>
+            )}
+
             <div className="wish-input-wrapper">
               <textarea
                 className="wish-textarea"
@@ -1690,10 +1809,32 @@ export default function App() {
             {lastSentWish && (
               <div className="last-sent-wish-card">
                 <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--primary-dark)', marginBottom: '3px' }}>
-                  ✨ Latest Wish Received by Shubham:
+                  ✨ Latest Wish Received:
                 </div>
-                <div style={{ fontStyle: 'italic', color: '#33272a', fontWeight: 600 }}>
+                <div style={{ fontStyle: 'italic', color: '#33272a', fontWeight: 600, marginBottom: '8px' }}>
                   &ldquo;{lastSentWish}&rdquo;
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+                  <a
+                    href={`mailto:shubhamecom1999@gmail.com?subject=${encodeURIComponent("🎂 Birthday Girl's Wish for Shubham 💕")}&body=${encodeURIComponent(`Hi Shubham,\n\nHere is my birthday wish:\n\n"${lastSentWish}"\n\nSent with all my love! 💖`)}`}
+                    style={{
+                      background: '#ffffff',
+                      border: '1.5px solid #ffccd5',
+                      color: 'var(--primary-dark)',
+                      padding: '5px 12px',
+                      borderRadius: '999px',
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      boxShadow: '0 2px 6px rgba(255, 94, 126, 0.12)'
+                    }}
+                  >
+                    <span>✉️</span>
+                    <span>Open in Gmail App</span>
+                  </a>
                 </div>
               </div>
             )}
@@ -1971,12 +2112,6 @@ export default function App() {
                   requestAnimationFrame(() => initScratchCanvas());
                 }
               }}
-              onTouchStart={handleScratchStart}
-              onTouchMove={handleScratchMove}
-              onTouchEnd={handleScratchEnd}
-              onMouseDown={handleScratchStart}
-              onMouseMove={handleScratchMove}
-              onMouseUp={handleScratchEnd}
             />
           </div>
 
@@ -2019,6 +2154,145 @@ export default function App() {
         </section>
 
         <footer>Made with endless love &amp; bear hugs by Shubham, just for you 💖</footer>
+
+        {/* Wish Inbox Modal */}
+        {showVaultModal && (
+          <div
+            className="modal-overlay"
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.65)',
+              backdropFilter: 'blur(4px)',
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px'
+            }}
+            onClick={() => setShowVaultModal(false)}
+          >
+            <div
+              className="modal-content"
+              style={{
+                background: '#ffffff',
+                borderRadius: '20px',
+                padding: '24px 20px',
+                maxWidth: '420px',
+                width: '100%',
+                maxHeight: '85vh',
+                overflowY: 'auto',
+                boxShadow: '0 20px 40px rgba(0, 0, 0, 0.25)',
+                textAlign: 'center',
+                position: 'relative'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setShowVaultModal(false)}
+                style={{
+                  position: 'absolute',
+                  top: '14px',
+                  right: '14px',
+                  background: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '28px',
+                  height: '28px',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                ✕
+              </button>
+
+              <div style={{ fontSize: '32px', marginBottom: '6px' }}>🐻💌🔐</div>
+              <h3 style={{ fontSize: '18px', color: 'var(--primary-dark)', margin: '0 0 6px', fontWeight: 800 }}>
+                Shubham&apos;s Wish Inbox
+              </h3>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: '0 0 16px' }}>
+                All birthday wishes submitted on this site are stored here safely!
+              </p>
+
+              {serverWishes.length === 0 ? (
+                <div style={{ padding: '24px 12px', background: '#fff5f7', borderRadius: '12px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  No wishes written yet. Type a wish above to send it! ✨
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', textAlign: 'left' }}>
+                  {serverWishes.map((item, idx) => (
+                    <div
+                      key={item.id || idx}
+                      style={{
+                        background: '#fffafb',
+                        border: '1.5px solid #ffccd5',
+                        borderRadius: '14px',
+                        padding: '12px 14px'
+                      }}
+                    >
+                      <div style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 700, marginBottom: '4px' }}>
+                        📅 {item.date}
+                      </div>
+                      <div style={{ fontSize: '14px', color: '#33272a', fontWeight: 600, fontStyle: 'italic', marginBottom: '8px' }}>
+                        &ldquo;{item.wish}&rdquo;
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <a
+                          href={`mailto:shubhamecom1999@gmail.com?subject=${encodeURIComponent("🎂 Birthday Girl's Wish for Shubham 💕")}&body=${encodeURIComponent(`Hi Shubham,\n\nHere is my birthday wish:\n\n"${item.wish}"\n\nSent with all my love! 💖`)}`}
+                          style={{
+                            fontSize: '11px',
+                            background: '#ffffff',
+                            border: '1px solid #ffccd5',
+                            color: 'var(--primary-dark)',
+                            padding: '4px 10px',
+                            borderRadius: '999px',
+                            textDecoration: 'none',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          ✉️ Open in Gmail
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ marginTop: '16px', background: '#f8fafc', padding: '10px 12px', borderRadius: '12px', fontSize: '11.5px', color: '#64748b', textAlign: 'left', lineHeight: 1.4 }}>
+                💡 <strong>Gmail Auto-Delivery Note:</strong> FormSubmit requires one-time activation. Check <code>shubhamecom1999@gmail.com</code> (including Spam/Promotions) for an email from FormSubmit and click <strong>&quot;Activate Form&quot;</strong> to receive instant email notifications for new wishes!
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowVaultModal(false)}
+                style={{
+                  marginTop: '16px',
+                  width: '100%',
+                  background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '999px',
+                  padding: '9px 16px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Close Inbox
+              </button>
+            </div>
+          </div>
+        )}
       </main>
       </>
       )}
