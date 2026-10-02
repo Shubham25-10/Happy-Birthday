@@ -255,6 +255,16 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  transition: transform 0.15s ease;
+}
+.cake-container:hover {
+  transform: scale(1.02);
+}
+.cake-container:active {
+  transform: scale(0.97);
 }
 .cake-svg { width: 165px; height: 165px; cursor: pointer; }
 

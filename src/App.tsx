@@ -252,6 +252,8 @@ export default function App() {
 
   // Scratch card canvas ref & custom context
   const scratchCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const scratchCleanupRef = useRef<(() => void) | null>(null);
+  const lastScratchPosRef = useRef<{ x: number; y: number } | null>(null);
   const [scratchSurprise] = useState<string>(() => {
     const saved = localStorage.getItem('birthday_scratch_surprise');
     if (!saved || saved === 'Your Favorite Dinner + A Secret Gift Tonight!') {
@@ -817,9 +819,13 @@ export default function App() {
     }
   };
 
-  // Blow out candles
+  // Blow out candles or relight to make another wish
   const handleBlowCandles = () => {
-    if (blownOut) return;
+    if (blownOut) {
+      setBlownOut(false);
+      triggerFallingHearts(16);
+      return;
+    }
     setBlownOut(true);
     triggerFallingHearts(22);
     confetti({ particleCount: 90, spread: 75, origin: { y: 0.6 } });
@@ -1091,16 +1097,15 @@ export default function App() {
   };
 
   // Touch Scratch-off Card setup & reseal
-  const initScratchCanvas = () => {
-    const canvas = scratchCanvasRef.current;
+  const initScratchCanvas = (el?: HTMLCanvasElement | null) => {
+    const canvas = el || scratchCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Measure exact rendered dimensions so scale is 1:1 on any mobile device
-    const rect = canvas.getBoundingClientRect();
-    const width = Math.round(rect.width) || 280;
-    const height = Math.round(rect.height) || 160;
+    // Fixed crisp canvas coordinates
+    const width = 290;
+    const height = 160;
     canvas.width = width;
     canvas.height = height;
 
@@ -1115,8 +1120,16 @@ export default function App() {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);
 
+    // Stardust sparkles
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    for (let i = 0; i < 40; i++) {
+      const rx = (i * 37) % width;
+      const ry = (i * 23) % height;
+      ctx.fillRect(rx, ry, 2.5, 2.5);
+    }
+
     // Decorative inner border
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
     ctx.lineWidth = 2.5;
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(6, 6, width - 12, height - 12);
@@ -1135,103 +1148,91 @@ export default function App() {
     ctx.fillText('Rub to reveal surprise! 🎁', width / 2, height / 2 + 16);
   };
 
-  useEffect(() => {
-    if (hasEntered) {
-      initScratchCanvas();
-      const timer = setTimeout(() => {
-        initScratchCanvas();
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [hasEntered]);
-
-  // Robust native touch & pointer listeners for 100% mobile compatibility
-  useEffect(() => {
-    if (!hasEntered) return;
+  const eraseAtPos = (clientX: number, clientY: number, isMove = false) => {
     const canvas = scratchCanvasRef.current;
     if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    let isDrawing = false;
-    let lastX = 0;
-    let lastY = 0;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / (rect.width || 1);
+    const scaleY = canvas.height / (rect.height || 1);
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
 
-    const getPos = (touchOrMouse: { clientX: number; clientY: number }) => {
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / (rect.width || 1);
-      const scaleY = canvas.height / (rect.height || 1);
-      return {
-        x: (touchOrMouse.clientX - rect.left) * scaleX,
-        y: (touchOrMouse.clientY - rect.top) * scaleY
-      };
-    };
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = '#000000';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 48;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
-    const erase = (x1: number, y1: number, x2: number, y2: number) => {
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.lineWidth = 44;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
+    if (isMove && lastScratchPosRef.current) {
       ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
+      ctx.moveTo(lastScratchPosRef.current.x, lastScratchPosRef.current.y);
+      ctx.lineTo(x, y);
       ctx.stroke();
+    }
 
-      ctx.beginPath();
-      ctx.arc(x2, y2, 22, 0, Math.PI * 2);
-      ctx.fill();
-    };
+    ctx.beginPath();
+    ctx.arc(x, y, 24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
 
-    // 1. Touch Events (Mobile Safari & Chrome with non-passive preventDefault)
+    lastScratchPosRef.current = { x, y };
+  };
+
+  // Callback ref attaching native touch & pointer listeners directly to live DOM node
+  const setCanvasRef = (canvas: HTMLCanvasElement | null) => {
+    if (scratchCleanupRef.current) {
+      scratchCleanupRef.current();
+      scratchCleanupRef.current = null;
+    }
+    scratchCanvasRef.current = canvas;
+    if (!canvas) return;
+
+    initScratchCanvas(canvas);
+
+    let isScratchingNow = false;
+
     const onTouchStart = (e: TouchEvent) => {
       if (e.cancelable) e.preventDefault();
       if (!e.touches || e.touches.length === 0) return;
-      isDrawing = true;
-      const pos = getPos(e.touches[0]);
-      lastX = pos.x;
-      lastY = pos.y;
-      erase(pos.x, pos.y, pos.x, pos.y);
+      isScratchingNow = true;
+      eraseAtPos(e.touches[0].clientX, e.touches[0].clientY, false);
     };
 
     const onTouchMove = (e: TouchEvent) => {
       if (e.cancelable) e.preventDefault();
-      if (!isDrawing || !e.touches || e.touches.length === 0) return;
-      const pos = getPos(e.touches[0]);
-      erase(lastX, lastY, pos.x, pos.y);
-      lastX = pos.x;
-      lastY = pos.y;
+      if (!isScratchingNow || !e.touches || e.touches.length === 0) return;
+      eraseAtPos(e.touches[0].clientX, e.touches[0].clientY, true);
     };
 
     const onTouchEnd = (e: TouchEvent) => {
       if (e.cancelable) e.preventDefault();
-      isDrawing = false;
+      isScratchingNow = false;
+      lastScratchPosRef.current = null;
     };
 
-    // 2. Pointer Events (Modern devices & mice)
     const onPointerDown = (e: PointerEvent) => {
       e.preventDefault();
-      isDrawing = true;
+      isScratchingNow = true;
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {}
-      const pos = getPos(e);
-      lastX = pos.x;
-      lastY = pos.y;
-      erase(pos.x, pos.y, pos.x, pos.y);
+      eraseAtPos(e.clientX, e.clientY, false);
     };
 
     const onPointerMove = (e: PointerEvent) => {
-      if (!isDrawing) return;
+      if (!isScratchingNow) return;
       e.preventDefault();
-      const pos = getPos(e);
-      erase(lastX, lastY, pos.x, pos.y);
-      lastX = pos.x;
-      lastY = pos.y;
+      eraseAtPos(e.clientX, e.clientY, true);
     };
 
     const onPointerUp = (e: PointerEvent) => {
-      isDrawing = false;
+      isScratchingNow = false;
+      lastScratchPosRef.current = null;
       try {
         canvas.releasePointerCapture(e.pointerId);
       } catch {}
@@ -1247,7 +1248,7 @@ export default function App() {
     canvas.addEventListener('pointerup', onPointerUp);
     canvas.addEventListener('pointercancel', onPointerUp);
 
-    return () => {
+    scratchCleanupRef.current = () => {
       canvas.removeEventListener('touchstart', onTouchStart);
       canvas.removeEventListener('touchmove', onTouchMove);
       canvas.removeEventListener('touchend', onTouchEnd);
@@ -1258,6 +1259,16 @@ export default function App() {
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
     };
+  };
+
+  useEffect(() => {
+    if (hasEntered) {
+      initScratchCanvas();
+      const timer = setTimeout(() => {
+        initScratchCanvas();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
   }, [hasEntered]);
 
   // Typewriter Letter Observer
@@ -1732,18 +1743,46 @@ export default function App() {
             </svg>
           </div>
 
-          <button
-            type="button"
-            className="btn-blow"
-            onClick={handleBlowCandles}
-          >
-            <span>💨</span>
-            <span>{blownOut ? 'Wishes Made! 🎉' : 'Blow Out Candles'}</span>
-          </button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', marginTop: '12px' }}>
+            <button
+              type="button"
+              className="btn-blow"
+              onClick={handleBlowCandles}
+            >
+              <span>{blownOut ? '🕯️' : '💨'}</span>
+              <span>{blownOut ? 'Relight Candles (Blow Again!)' : 'Blow Out Candles'}</span>
+            </button>
+            {blownOut && (
+              <button
+                type="button"
+                onClick={() => {
+                  setBlownOut(false);
+                  triggerFallingHearts(15);
+                }}
+                style={{
+                  background: '#ffffff',
+                  border: '1.5px solid #ffccd5',
+                  color: 'var(--primary-dark)',
+                  borderRadius: '999px',
+                  padding: '10px 18px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 8px rgba(255, 94, 126, 0.12)'
+                }}
+              >
+                <span>🔄</span>
+                <span>Refresh Cake</span>
+              </button>
+            )}
+          </div>
 
           {blownOut && (
-            <p style={{ fontSize: '14px', color: 'var(--primary-dark)', fontWeight: 700, marginTop: '10px' }}>
-              ✨ Your wish is officially locked in with the stars! ✨
+            <p style={{ fontSize: '13.5px', color: 'var(--primary-dark)', fontWeight: 700, marginTop: '10px' }}>
+              ✨ Your wish is officially locked in with the stars! Tap anytime to relight and make another wish! 🕯️
             </p>
           )}
         </section>
@@ -2106,16 +2145,35 @@ export default function App() {
             </div>
             <canvas
               id="scratch-canvas"
-              ref={(el) => {
-                scratchCanvasRef.current = el;
-                if (el) {
-                  requestAnimationFrame(() => initScratchCanvas());
+              ref={setCanvasRef}
+              onTouchStart={(e) => {
+                if (e.touches && e.touches[0]) {
+                  eraseAtPos(e.touches[0].clientX, e.touches[0].clientY, false);
                 }
+              }}
+              onTouchMove={(e) => {
+                if (e.touches && e.touches[0]) {
+                  eraseAtPos(e.touches[0].clientX, e.touches[0].clientY, true);
+                }
+              }}
+              onTouchEnd={() => {
+                lastScratchPosRef.current = null;
+              }}
+              onMouseDown={(e) => {
+                eraseAtPos(e.clientX, e.clientY, false);
+              }}
+              onMouseMove={(e) => {
+                if (e.buttons === 1) {
+                  eraseAtPos(e.clientX, e.clientY, true);
+                }
+              }}
+              onMouseUp={() => {
+                lastScratchPosRef.current = null;
               }}
             />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', marginTop: '10px' }}>
             <button
               type="button"
               className="btn-reseal-scratch"
@@ -2127,9 +2185,22 @@ export default function App() {
               <span>✨</span>
               <span>Re-seal Card (Scratch Again)</span>
             </button>
-            <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: 0 }}>
-              Valid anytime • Non-transferable • Infinite cuddles included
-            </p>
+            <button
+              type="button"
+              className="btn-reseal-scratch"
+              onClick={() => {
+                const canvas = scratchCanvasRef.current;
+                if (canvas) {
+                  const ctx = canvas.getContext('2d');
+                  if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+                triggerFallingHearts(20);
+                confetti({ particleCount: 55, spread: 70, origin: { y: 0.65 } });
+              }}
+            >
+              <span>🎁</span>
+              <span>Reveal Surprise</span>
+            </button>
           </div>
         </section>
 
