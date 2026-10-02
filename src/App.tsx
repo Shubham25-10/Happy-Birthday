@@ -174,7 +174,6 @@ export default function App() {
   const [wishInput, setWishInput] = useState('');
   const [lastSentWish, setLastSentWish] = useState<string | null>(null);
   const [wishSentNotification, setWishSentNotification] = useState<string | null>(null);
-  const [wishActivationNotice, setWishActivationNotice] = useState(false);
   const [serverWishes, setServerWishes] = useState<Array<{ id: string; wish: string; date: string }>>([]);
   const [showVaultModal, setShowVaultModal] = useState(false);
 
@@ -1048,9 +1047,9 @@ export default function App() {
       .then(() => loadWishes())
       .catch(() => {});
 
-    // 3. Dispatch to FormSubmit with activation detection
+    // 3. Dispatch to FormSubmit
     try {
-      const res = await fetch('https://formsubmit.co/ajax/shubhamecom1999@gmail.com', {
+      fetch('https://formsubmit.co/ajax/shubhamecom1999@gmail.com', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1063,18 +1062,10 @@ export default function App() {
           recipient: 'shubhamecom1999@gmail.com',
           source: 'Birthday Website'
         })
-      });
-
-      const data = await res.json().catch(() => null);
-      if (data && data.success === 'false' && data.message?.includes('Activation')) {
-        setWishActivationNotice(true);
-        setWishSentNotification(`💌 Wish "${wish.length > 30 ? wish.slice(0, 30) + '...' : wish}" recorded! FormSubmit sent a 1-time activation email to shubhamecom1999@gmail.com. Please click "Activate Form" in that email once to enable automatic forwarding.`);
-      } else {
-        setWishActivationNotice(false);
-        setWishSentNotification(`💌 Wish "${wish.length > 30 ? wish.slice(0, 30) + '...' : wish}" was delivered straight to Shubham's Gmail (shubhamecom1999@gmail.com)!`);
-      }
+      }).catch(() => {});
+      setWishSentNotification('Wish is sent');
     } catch {
-      setWishSentNotification(`💌 Wish "${wish.length > 30 ? wish.slice(0, 30) + '...' : wish}" saved securely in Shubham's Wish Inbox!`);
+      setWishSentNotification('Wish is sent');
     }
 
     // 4. Also dispatch via Gmail API if user connected
@@ -1812,19 +1803,7 @@ export default function App() {
           <div className="wish-card-container">
             {wishSentNotification && (
               <div className="wish-sent-success-banner">
-                <div style={{ fontWeight: 700, marginBottom: '2px', color: '#047857' }}>
-                  🎉 Wish Successfully Sent to Shubham!
-                </div>
-                <div>{wishSentNotification}</div>
-                <div style={{ fontSize: '11px', color: '#059669', marginTop: '4px' }}>
-                  The box is refreshed below — write as many wishes as you want! 💖
-                </div>
-              </div>
-            )}
-
-            {wishActivationNotice && (
-              <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '12px', padding: '10px 14px', fontSize: '12px', color: '#92400e', textAlign: 'left', lineHeight: 1.45, marginBottom: '10px' }}>
-                <strong>📩 Important Note for Shubham:</strong> FormSubmit sent a <strong>one-time activation email</strong> to <code>shubhamecom1999@gmail.com</code> (check Spam/Updates too). Please open that email and click <strong>&quot;Activate Form&quot;</strong> so all incoming wishes arrive automatically in your inbox!
+                {wishSentNotification}
               </div>
             )}
 
@@ -1850,39 +1829,6 @@ export default function App() {
                 </button>
               </div>
             </div>
-
-            {lastSentWish && (
-              <div className="last-sent-wish-card">
-                <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--primary-dark)', marginBottom: '3px' }}>
-                  ✨ Latest Wish Received:
-                </div>
-                <div style={{ fontStyle: 'italic', color: '#33272a', fontWeight: 600, marginBottom: '8px' }}>
-                  &ldquo;{lastSentWish}&rdquo;
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
-                  <a
-                    href={`mailto:shubhamecom1999@gmail.com?subject=${encodeURIComponent("🎂 Birthday Girl's Wish for Shubham 💕")}&body=${encodeURIComponent(`Hi Shubham,\n\nHere is my birthday wish:\n\n"${lastSentWish}"\n\nSent with all my love! 💖`)}`}
-                    style={{
-                      background: '#ffffff',
-                      border: '1.5px solid #ffccd5',
-                      color: 'var(--primary-dark)',
-                      padding: '5px 12px',
-                      borderRadius: '999px',
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      textDecoration: 'none',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      boxShadow: '0 2px 6px rgba(255, 94, 126, 0.12)'
-                    }}
-                  >
-                    <span>✉️</span>
-                    <span>Open in Gmail App</span>
-                  </a>
-                </div>
-              </div>
-            )}
 
             {/* Shubham Wish Vault Inspector */}
             <button
