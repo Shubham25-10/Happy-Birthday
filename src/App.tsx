@@ -139,6 +139,37 @@ export default function App() {
   const [isJarShaking, setIsJarShaking] = useState(false);
   const [favorites, setFavorites] = useState<number[]>([]);
 
+  // Birthday Countdown State & Midnight Lock
+  const getDefaultTargetDate = () => {
+    const saved = localStorage.getItem('birthday_countdown_target');
+    if (saved) return saved;
+    // Default to tomorrow 12:00 AM (midnight)
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${midnight.getFullYear()}-${pad(midnight.getMonth() + 1)}-${pad(midnight.getDate())}T00:00`;
+  };
+
+  const [targetDateStr, setTargetDateStr] = useState<string>(getDefaultTargetDate);
+  const [isEditingCountdownDate, setIsEditingCountdownDate] = useState(false);
+  const [tempCountdownDate, setTempCountdownDate] = useState(targetDateStr);
+  const [forceUnlocked, setForceUnlocked] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [countdownTime, setCountdownTime] = useState({
+    days: 0,
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+    isToday: false
+  });
+
+  // Write a Wish State
+  const [savedWish, setSavedWish] = useState<string>(() => {
+    return localStorage.getItem('birthday_girl_wish') || '';
+  });
+  const [wishInput, setWishInput] = useState('');
+  const [isEditingWish, setIsEditingWish] = useState(false);
+
   // Scratch card canvas ref & custom context
   const scratchCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isScratching, setIsScratching] = useState(false);
@@ -822,6 +853,100 @@ export default function App() {
     );
   };
 
+  // Birthday Countdown Timer Effect
+  useEffect(() => {
+    const updateCountdown = () => {
+      const target = new Date(targetDateStr).getTime();
+      const now = Date.now();
+      const diff = target - now;
+
+      // If midnight target is reached or passed (diff <= 0)
+      if (diff <= 0) {
+        setCountdownTime({
+          days: 0,
+          hours: 0,
+          minutes: 0,
+          seconds: 0,
+          isToday: true
+        });
+        if (!isUnlocked) {
+          setIsUnlocked(true);
+          triggerFallingHearts(28);
+          confetti({ particleCount: 110, spread: 90, origin: { y: 0.6 } });
+        }
+        return;
+      }
+
+      // Still counting down before 12:00 AM
+      setIsUnlocked(false);
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((diff / (1000 * 60)) % 60);
+      const seconds = Math.floor((diff / 1000) % 60);
+
+      setCountdownTime({
+        days,
+        hours,
+        minutes,
+        seconds,
+        isToday: false
+      });
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [targetDateStr, isUnlocked]);
+
+  const handleSaveCountdownDate = () => {
+    if (!tempCountdownDate) return;
+    setTargetDateStr(tempCountdownDate);
+    localStorage.setItem('birthday_countdown_target', tempCountdownDate);
+    setIsEditingCountdownDate(false);
+    triggerFallingHearts(14);
+  };
+
+  // Starlight Particle Animation & Cast Wish
+  const spawnStarlightFx = (originX: number, originY: number) => {
+    const starChars = ['⭐', '✨', '🌟', '💫', '💖'];
+    for (let i = 0; i < 20; i++) {
+      setTimeout(() => {
+        const star = document.createElement('div');
+        star.className = 'starlight-particle';
+        star.textContent = starChars[Math.floor(Math.random() * starChars.length)];
+        star.style.left = `${originX + (Math.random() * 40 - 20)}px`;
+        star.style.top = `${originY + (Math.random() * 20 - 10)}px`;
+        const tx = (Math.random() - 0.5) * 240;
+        const ty = -(Math.random() * 280 + 160);
+        star.style.setProperty('--tx', `${tx}px`);
+        star.style.setProperty('--ty', `${ty}px`);
+        document.body.appendChild(star);
+        setTimeout(() => star.remove(), 1900);
+      }, i * 60);
+    }
+  };
+
+  const handleCastWish = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!wishInput.trim()) return;
+    const wish = wishInput.trim();
+    setSavedWish(wish);
+    try {
+      localStorage.setItem('birthday_girl_wish', wish);
+    } catch {}
+    setIsEditingWish(false);
+
+    // Starlight effect
+    const rect = e.currentTarget.getBoundingClientRect();
+    spawnStarlightFx(rect.left + rect.width / 2, rect.top);
+    triggerFallingHearts(22);
+    confetti({
+      particleCount: 75,
+      spread: 80,
+      origin: { y: 0.65 }
+    });
+  };
+
   // Touch Scratch-off Card setup & reseal
   const initScratchCanvas = () => {
     const canvas = scratchCanvasRef.current;
@@ -1000,7 +1125,159 @@ export default function App() {
         <span>{isPlaying ? 'Playing 🎶' : 'Birthday Song 🎵'}</span>
       </button>
 
-      <main className="app-container">
+      {/* Countdown First Page (Shown before 12:00 AM Midnight) */}
+      {!isUnlocked && !forceUnlocked ? (
+        <div className="countdown-lock-screen">
+          <div className="countdown-lock-card">
+            <div className="countdown-midnight-badge">
+              <span>⏳</span>
+              <span>Reveals at 12:00 AM Midnight</span>
+              <span>✨</span>
+            </div>
+
+            <div className="countdown-lock-icon">🎁</div>
+
+            <h1 className="countdown-lock-title">
+              Almost Your Birthday, Cutie! 💖
+            </h1>
+
+            <p className="countdown-lock-desc">
+              Shubham, Milk &amp; Mocha have prepared a magical birthday surprise for you! This website is locked with love and will automatically open at <strong>12:00 AM</strong>.
+            </p>
+
+            {/* Countdown Clock Grid */}
+            <div className="countdown-grid">
+              {/* Days */}
+              <div className="countdown-box">
+                <span className="countdown-heart-accent">💖</span>
+                <div className="countdown-num">{String(countdownTime.days).padStart(2, '0')}</div>
+                <div className="countdown-label">Days</div>
+              </div>
+
+              {/* Hours */}
+              <div className="countdown-box">
+                <span className="countdown-heart-accent">💕</span>
+                <div className="countdown-num">{String(countdownTime.hours).padStart(2, '0')}</div>
+                <div className="countdown-label">Hours</div>
+              </div>
+
+              {/* Minutes */}
+              <div className="countdown-box">
+                <span className="countdown-heart-accent">💓</span>
+                <div className="countdown-num">{String(countdownTime.minutes).padStart(2, '0')}</div>
+                <div className="countdown-label">Minutes</div>
+              </div>
+
+              {/* Seconds */}
+              <div className="countdown-box">
+                <span className="countdown-heart-accent">✨</span>
+                <div className="countdown-num">{String(countdownTime.seconds).padStart(2, '0')}</div>
+                <div className="countdown-label">Seconds</div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: '13px', color: 'var(--primary-dark)', fontStyle: 'italic', margin: '8px 0 12px' }}>
+              &ldquo;Counting down every single heartbeat until I get to celebrate you...&rdquo; 🐾
+            </div>
+
+            {/* Milk and Mocha Bear Sleeping / Peeking Graphic */}
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', margin: '4px 0 8px' }}>
+              <svg width="150" height="90" viewBox="0 0 200 120" fill="none">
+                <g className="mocha-bear">
+                  <path d="M130 50 C130 30, 160 30, 160 50 C168 62, 168 100, 148 108 C134 112, 126 100, 130 50 Z" fill="#ad7954" />
+                  <circle cx="138" cy="34" r="8" fill="#ad7954" />
+                  <circle cx="138" cy="34" r="4" fill="#875535" />
+                  <circle cx="160" cy="40" r="7" fill="#ad7954" />
+                  <path d="M142 54 Q146 58 150 54" stroke="#2b1810" strokeWidth="2" strokeLinecap="round" fill="none" />
+                </g>
+                <g className="milk-bear">
+                  <circle cx="70" cy="35" r="11" fill="#ffffff" stroke="#e0d5d5" strokeWidth="1.5" />
+                  <circle cx="70" cy="35" r="5" fill="#ffd1dc" />
+                  <circle cx="115" cy="35" r="11" fill="#ffffff" stroke="#e0d5d5" strokeWidth="1.5" />
+                  <circle cx="115" cy="35" r="5" fill="#ffd1dc" />
+                  <ellipse cx="92" cy="65" rx="34" ry="30" fill="#ffffff" stroke="#e0d5d5" strokeWidth="1.5" />
+                  <ellipse cx="72" cy="72" rx="7" ry="5" fill="#ffb3c1" opacity="0.8" />
+                  <ellipse cx="112" cy="72" rx="7" ry="5" fill="#ffb3c1" opacity="0.8" />
+                  <path d="M78 63 Q83 68 88 63" stroke="#33272a" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+                  <path d="M96 63 Q101 68 106 63" stroke="#33272a" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+                  <ellipse cx="92" cy="68" rx="3.5" ry="2.5" fill="#33272a" />
+                </g>
+                <text x="100" y="112" textAnchor="middle" fontSize="11" fill="#ff758f" fontWeight="bold">Shh... bears are setting up the party! 🎈</text>
+              </svg>
+            </div>
+
+            {/* Preview Controls for testing & Date Setup */}
+            <div className="countdown-preview-toggle-bar">
+              <button
+                type="button"
+                className="btn-preview-unlock"
+                onClick={() => {
+                  setForceUnlocked(true);
+                  startMusic();
+                  triggerFallingHearts(24);
+                  confetti({ particleCount: 90, spread: 80, origin: { y: 0.6 } });
+                }}
+              >
+                <span>🔓</span>
+                <span>Preview Website Now</span>
+              </button>
+
+              <div className="countdown-date-edit-wrapper">
+                {!isEditingCountdownDate ? (
+                  <button
+                    type="button"
+                    className="btn-date-toggle"
+                    onClick={() => {
+                      setTempCountdownDate(targetDateStr);
+                      setIsEditingCountdownDate(true);
+                    }}
+                  >
+                    🗓️ Set Midnight Date &amp; Time ({new Date(targetDateStr).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})
+                  </button>
+                ) : (
+                  <div className="date-picker-inline">
+                    <input
+                      type="datetime-local"
+                      className="date-picker-input"
+                      value={tempCountdownDate}
+                      onChange={(e) => setTempCountdownDate(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="btn-save-date"
+                      onClick={handleSaveCountdownDate}
+                    >
+                      Save Date ❤️
+                    </button>
+                    <button
+                      type="button"
+                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '11px', cursor: 'pointer' }}
+                      onClick={() => setIsEditingCountdownDate(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Full Celebration Website Unlocked! */
+        <>
+          {forceUnlocked && (
+            <button
+              type="button"
+              className="top-unlocked-preview-pill"
+              onClick={() => setForceUnlocked(false)}
+              title="Return to Countdown Screen"
+            >
+              <span>🔒</span>
+              <span>Back to Countdown</span>
+            </button>
+          )}
+
+          <main className="app-container">
         {/* 1. Hero & Milk + Mocha Feature */}
         <header className="card">
           <div className="hero-badge">✨ Today is All About You ✨</div>
@@ -1121,6 +1398,98 @@ export default function App() {
               ✨ Your wish is officially locked in with the stars! ✨
             </p>
           )}
+        </section>
+
+        {/* 2.5. Write a Birthday Wish Section */}
+        <section className="card" id="writeWishSection">
+          <div className="hero-badge" style={{ marginBottom: '8px' }}>
+            <span>⭐</span>
+            <span>Make a Secret Wish</span>
+            <span>✨</span>
+          </div>
+
+          <h2 style={{ fontSize: '22px', color: 'var(--primary-dark)', fontWeight: 700, margin: '2px 0 6px' }}>
+            Write a Birthday Wish 🌟💌
+          </h2>
+
+          <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.5, maxWidth: '340px', margin: '0 auto 12px' }}>
+            What is your heart wishing for this year? Type it out below and release it into the stars—Shubham will keep it safe forever!
+          </p>
+
+          <div className="wish-card-container">
+            {!savedWish || isEditingWish ? (
+              <div className="wish-input-wrapper">
+                <textarea
+                  className="wish-textarea"
+                  value={wishInput}
+                  onChange={(e) => setWishInput(e.target.value)}
+                  placeholder="Type your deepest birthday wish here... (e.g., A trip to Japan together, infinite cuddles, endless desserts...)"
+                  rows={3}
+                />
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '10px' }}>
+                  <button
+                    type="button"
+                    className="btn-cast-wish"
+                    onClick={handleCastWish}
+                    disabled={!wishInput.trim()}
+                    style={{ opacity: wishInput.trim() ? 1 : 0.6 }}
+                  >
+                    <span>✨</span>
+                    <span>Release Wish to the Stars</span>
+                    <span>⭐</span>
+                  </button>
+
+                  {savedWish && isEditingWish && (
+                    <button
+                      type="button"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        padding: '8px'
+                      }}
+                      onClick={() => setIsEditingWish(false)}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="starlight-keepsake">
+                <div className="starlight-badge">
+                  <span>🌌</span>
+                  <span>Written in the Starlight</span>
+                  <span>✨</span>
+                </div>
+
+                <div className="starlight-quote">
+                  &ldquo;{savedWish}&rdquo;
+                </div>
+
+                <p className="starlight-promise">
+                  Your wish has been received by the universe and locked in my heart. I promise to do everything in my power to make it come true.
+                </p>
+
+                <div style={{ fontSize: '12.5px', color: '#ffd166', fontWeight: 700, marginBottom: '14px' }}>
+                  — Forever Yours, Shubham 🐻❤️
+                </div>
+
+                <button
+                  type="button"
+                  className="btn-rewrite-wish"
+                  onClick={() => {
+                    setWishInput(savedWish);
+                    setIsEditingWish(true);
+                  }}
+                >
+                  ✏️ Edit or Make Another Wish
+                </button>
+              </div>
+            )}
+          </div>
         </section>
 
         {/* 3. The Playful Twist (Runaway "No" Button) */}
@@ -1550,6 +1919,8 @@ export default function App() {
 
         <footer>Made with endless love &amp; bear hugs by Shubham, just for you 💖</footer>
       </main>
+      </>
+      )}
     </>
   );
 }
