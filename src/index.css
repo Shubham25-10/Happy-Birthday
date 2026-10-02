@@ -157,20 +157,75 @@ body {
 
 .bear-bubble {
   position: absolute;
-  top: -14px;
+  top: -16px;
   right: -8px;
   background: #ffffff;
   border: 2px solid var(--primary-light);
   border-radius: 18px;
-  padding: 5px 12px;
+  padding: 6px 12px;
   font-size: 12px;
   font-weight: 700;
   color: var(--primary-dark);
-  box-shadow: 0 4px 12px rgba(255, 94, 126, 0.2);
+  box-shadow: 0 4px 14px rgba(255, 94, 126, 0.22);
   white-space: nowrap;
-  animation: floatBubble 2.5s ease-in-out infinite alternate;
+  animation: popBubble 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), floatBubble 2.5s ease-in-out infinite alternate 0.3s;
   z-index: 10;
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@keyframes popBubble {
+  0% { transform: scale(0.85); opacity: 0.6; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.bear-bubble-counter {
+  background: #ffe3e8;
+  color: var(--primary-dark);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 182, 193, 0.8);
+}
+
+.bear-tap-badge {
+  position: absolute;
+  bottom: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ffffff;
+  border: 1.5px solid var(--primary-light);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary-dark);
+  box-shadow: 0 4px 12px rgba(255, 94, 126, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  animation: tapBadgeFloat 1.8s ease-in-out infinite alternate;
+  z-index: 10;
+  pointer-events: none;
+}
+
+@keyframes tapBadgeFloat {
+  0% { transform: translateX(-50%) translateY(0); }
+  100% { transform: translateX(-50%) translateY(-3px); }
+}
+
+.tap-hand {
+  animation: tapHandWiggle 1s ease-in-out infinite;
+  display: inline-block;
+}
+
+@keyframes tapHandWiggle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
 }
 
 @keyframes floatBubble {
@@ -551,4 +606,184 @@ footer {
   font-weight: 600;
   margin-top: 12px;
 }
+
+/* Little Jar of 365 Reasons Section */
+.love-jar-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 12px 0 8px;
+  position: relative;
+}
+
+.jar-wrapper {
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  touch-action: manipulation;
+}
+.jar-wrapper:hover {
+  transform: scale(1.05);
+}
+.jar-wrapper:active {
+  transform: scale(0.95);
+}
+.jar-wrapper.shaking {
+  animation: jarShake 0.5s ease-in-out;
+}
+
+@keyframes jarShake {
+  0%, 100% { transform: rotate(0) scale(1); }
+  20% { transform: rotate(-8deg) scale(1.04); }
+  40% { transform: rotate(8deg) scale(1.04); }
+  60% { transform: rotate(-6deg) scale(1.04); }
+  80% { transform: rotate(4deg) scale(1.04); }
+}
+
+.jar-glow {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 182, 193, 0.45) 0%, rgba(255, 182, 193, 0) 70%);
+  filter: blur(10px);
+  z-index: 1;
+  pointer-events: none;
+  animation: glowPulse 2.5s ease-in-out infinite alternate;
+}
+
+@keyframes glowPulse {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  100% { transform: scale(1.15); opacity: 0.95; }
+}
+
+.jar-svg {
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 6px 16px rgba(255, 94, 126, 0.18));
+}
+
+.jar-opened-note {
+  background: #fffdf9;
+  border: 1px solid #ffd5dc;
+  border-radius: 18px;
+  padding: 22px 18px 18px;
+  margin-top: 16px;
+  box-shadow: 0 10px 30px rgba(255, 94, 126, 0.14), 0 2px 8px rgba(0, 0, 0, 0.04);
+  position: relative;
+  text-align: center;
+  animation: unfoldNote 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: top center;
+  max-width: 360px;
+  width: 100%;
+}
+
+@keyframes unfoldNote {
+  0% { opacity: 0; transform: translateY(-20px) scale(0.7) rotate(-4deg); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(-0.5deg); }
+}
+
+.note-washi-tape {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 72px;
+  height: 16px;
+  background: rgba(255, 182, 193, 0.7);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  border-left: 2px dashed rgba(255, 255, 255, 0.7);
+  border-right: 2px dashed rgba(255, 255, 255, 0.7);
+}
+
+.note-number-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ffe3e8;
+  color: var(--primary-dark);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+
+.note-text {
+  font-family: 'Dancing Script', cursive;
+  font-size: 21px;
+  line-height: 1.45;
+  color: #33272a;
+  margin-bottom: 12px;
+  padding: 0 6px;
+}
+
+.note-signoff {
+  font-size: 12px;
+  color: var(--primary-dark);
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.note-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.btn-jar-pick {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  color: #ffffff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 12px rgba(255, 94, 126, 0.3);
+  transition: transform 0.15s ease;
+  touch-action: manipulation;
+}
+.btn-jar-pick:active {
+  transform: scale(0.95);
+}
+
+.btn-jar-fav {
+  background: #fff0f3;
+  color: var(--primary-dark);
+  border: 1.5px solid #ffccd5;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+  touch-action: manipulation;
+}
+.btn-jar-fav.favorited {
+  background: #ffe3e8;
+  color: #e11d48;
+  border-color: #f43f5e;
+}
+
+.jar-stats-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 

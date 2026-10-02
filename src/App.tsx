@@ -68,6 +68,44 @@ const hbdScore: ScoreItem[] = [
   { m: 'C5', b: 'C4', d: 1.25, p: 0.5 }
 ];
 
+const loveReasons = [
+  "How your laughter can instantly turn my most stressful day into complete peace.",
+  "The adorable way you scrunch your nose when you're laughing hard or being playful.",
+  "How your hand feels so warm and natural in mine, like they were custom-made to fit.",
+  "The cute, sleepy voice you have when you answer my morning calls.",
+  "How you always offer me the best first bite of your favorite food.",
+  "Your pure, empathetic heart that cares so tenderly about everyone around you.",
+  "The secret inside jokes only the two of us understand.",
+  "The way your eyes sparkle like fireworks whenever you see cute puppies or sweet treats.",
+  "How safe, understood, and truly at home I feel whenever I am with you.",
+  "How you steal my oversized hoodies and somehow look ten times cuter in them than I ever could.",
+  "The happy little wiggle you do when delicious dessert arrives at our table.",
+  "Your sweet patience and warmth, even when I'm being an absolute dork.",
+  "The way you listen to me with your whole heart, making me feel heard like no one else does.",
+  "How breathtaking you look in messy buns, pajamas, or dressed up—always gorgeous to me.",
+  "The sweet random texts you send me throughout the day that make me smile at my phone like an idiot.",
+  "How fiercely you believe in me and support my dreams, even when I doubt myself.",
+  "The gentle forehead kisses and quiet cuddles on rainy afternoons.",
+  "The quiet pride in my chest every time I get to tell someone, 'That's my girl.'",
+  "The comforting, cozy scent of your perfume that lingers on my jacket.",
+  "How we can spend hours doing absolutely nothing together and it still feels like the best date ever.",
+  "The way you remember the tiniest, subtle things I mention in passing.",
+  "Your cute stubbornness when you're playfully trying to win a silly debate.",
+  "How you turn ordinary grocery store trips into the sweetest little adventures.",
+  "The way you hold onto my arm tightly when we're walking together in the cold.",
+  "How you inspire me to be a kinder, stronger, and more loving man every single day.",
+  "Because out of eight billion people in this universe, my heart chose you—and it's the easiest choice I'll ever make.",
+  "The soft, gentle whisper of 'I love you' right before you drift off to sleep.",
+  "The cute, guilty face you make when I catch you staring at me.",
+  "How you always know the exact right moment to wrap me in a tight bear hug.",
+  "The way we can communicate an entire sentence just through a single look across the room.",
+  "How you bring vibrant color, laughter, and sunshine into every corner of my life.",
+  "Because every single second spent with you becomes my new favorite memory.",
+  "The way you curl up next to me like a little kitten when watching our favorite shows.",
+  "How excited you get over small, thoughtful surprises.",
+  "Because loving you is the most effortless, natural, and beautiful thing in my world."
+];
+
 export default function App() {
   // Audio state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -95,6 +133,12 @@ export default function App() {
   // Polaroid state
   const [isFlipped, setIsFlipped] = useState(false);
 
+  // Little Jar of 365 Reasons state
+  const [openedReason, setOpenedReason] = useState<{ num: number; text: string } | null>(null);
+  const [openedCount, setOpenedCount] = useState(0);
+  const [isJarShaking, setIsJarShaking] = useState(false);
+  const [favorites, setFavorites] = useState<number[]>([]);
+
   // Scratch card canvas ref & custom context
   const scratchCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isScratching, setIsScratching] = useState(false);
@@ -121,6 +165,47 @@ export default function App() {
   // Ambient floating background canvas
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // Falling hearts particle system triggered on click and scroll
+  interface FallingHeartParticle {
+    x: number;
+    y: number;
+    speedY: number;
+    speedX: number;
+    swayFreq: number;
+    swayAmp: number;
+    swayPhase: number;
+    size: number;
+    char: string;
+    opacity: number;
+    rotation: number;
+    rotationSpeed: number;
+  }
+
+  const fallingHeartsRef = useRef<FallingHeartParticle[]>([]);
+  const lastFallingTriggerRef = useRef(0);
+
+  const triggerFallingHearts = (count = 14) => {
+    const width = window.innerWidth;
+    const newHearts: FallingHeartParticle[] = Array.from({ length: count }, () => ({
+      x: Math.random() * width,
+      y: -(Math.random() * 80 + 20),
+      speedY: Math.random() * 1.5 + 1.2,
+      speedX: (Math.random() - 0.5) * 0.6,
+      swayFreq: Math.random() * 0.003 + 0.002,
+      swayAmp: Math.random() * 18 + 10,
+      swayPhase: Math.random() * Math.PI * 2,
+      size: Math.random() * 14 + 14,
+      char: heartEmojis[Math.floor(Math.random() * heartEmojis.length)],
+      opacity: Math.random() * 0.35 + 0.55,
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 0.04,
+    }));
+    fallingHeartsRef.current.push(...newHearts);
+    if (fallingHeartsRef.current.length > 55) {
+      fallingHeartsRef.current = fallingHeartsRef.current.slice(-55);
+    }
+  };
+
   // Spawn tap hearts
   const spawnHeartAt = (x: number, y: number) => {
     const heart = document.createElement('div');
@@ -136,21 +221,46 @@ export default function App() {
     const handlePointerDown = (e: PointerEvent) => {
       const target = e.target as HTMLElement | null;
       if (
-        target?.closest('button') ||
         target?.closest('#scratch-canvas') ||
-        target?.closest('input') ||
-        target?.closest('.photo-upload-btn')
+        target?.closest('input')
       ) {
         return;
       }
       spawnHeartAt(e.clientX, e.clientY);
+
+      // Occasionally trigger a falling hearts shower across the screen on click/tap
+      const now = performance.now();
+      if (now - lastFallingTriggerRef.current > 1400) {
+        lastFallingTriggerRef.current = now;
+        triggerFallingHearts(Math.random() < 0.4 ? 16 : 10);
+      }
     };
 
     window.addEventListener('pointerdown', handlePointerDown);
     return () => window.removeEventListener('pointerdown', handlePointerDown);
   }, []);
 
-  // Ambient Canvas Hearts
+  // Falling hearts trigger on scroll
+  useEffect(() => {
+    let lastScrollY = window.scrollY;
+
+    const handleScroll = () => {
+      const now = performance.now();
+      const currentY = window.scrollY;
+      const scrollDiff = Math.abs(currentY - lastScrollY);
+
+      if (scrollDiff > 60 && now - lastFallingTriggerRef.current > 2200) {
+        lastFallingTriggerRef.current = now;
+        lastScrollY = currentY;
+        triggerFallingHearts(12);
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Ambient Floating Birthday Balloons & Sparkles Engine
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -158,46 +268,250 @@ export default function App() {
     if (!ctx) return;
 
     let animId: number;
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
+    let width = window.innerWidth;
+    let height = window.innerHeight;
 
-    const handleResize = () => {
+    const balloonThemes = [
+      { main: '#ff5e7e', highlight: '#ffa8b8', dark: '#d93b5d' }, // Rose Pink
+      { main: '#ff9a3c', highlight: '#ffd29d', dark: '#d96c14' }, // Sunset Coral
+      { main: '#ffc83b', highlight: '#ffea9f', dark: '#d49b11' }, // Golden Champagne
+      { main: '#a855f7', highlight: '#d8b4fe', dark: '#7e22ce' }, // Pastel Lavender
+      { main: '#ec4899', highlight: '#fbcfe8', dark: '#be185d' }, // Fuchsia
+      { main: '#38bdf8', highlight: '#bae6fd', dark: '#0284c7' }, // Sky Blue
+      { main: '#34d399', highlight: '#a7f3d0', dark: '#059669' }, // Mint Teal
+      { main: '#fb7185', highlight: '#fecdd3', dark: '#e11d48' }, // Strawberry Red
+    ];
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    const setupCanvasSize = () => {
       if (!canvas) return;
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
     };
-    window.addEventListener('resize', handleResize);
 
-    const particles = Array.from({ length: 18 }, () => ({
+    setupCanvasSize();
+    window.addEventListener('resize', setupCanvasSize);
+
+    // Generate floating balloons spread vertically
+    const balloonCount = width < 480 ? 12 : 18;
+    const balloons = Array.from({ length: balloonCount }, (_, idx) => {
+      const radiusX = Math.random() * 8 + 16;
+      const radiusY = radiusX * (Math.random() * 0.25 + 1.25);
+      return {
+        baseX: Math.random() * width,
+        x: Math.random() * width,
+        y: (height / balloonCount) * idx + (Math.random() * 60 - 30),
+        radiusX,
+        radiusY,
+        speedY: Math.random() * 0.55 + 0.65,
+        swayFreq: Math.random() * 0.0015 + 0.0015,
+        swayAmp: Math.random() * 14 + 10,
+        swayPhase: Math.random() * Math.PI * 2,
+        stringLength: Math.random() * 15 + 32,
+        theme: balloonThemes[Math.floor(Math.random() * balloonThemes.length)],
+        opacity: Math.random() * 0.25 + 0.45,
+        isHeart: Math.random() < 0.35,
+      };
+    });
+
+    // Gentle sparkles/mini hearts
+    const sparkles = Array.from({ length: 12 }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      size: Math.random() * 14 + 10,
-      speedY: Math.random() * 0.7 + 0.3,
-      speedX: (Math.random() - 0.5) * 0.3,
-      char: heartEmojis[Math.floor(Math.random() * heartEmojis.length)]
+      size: Math.random() * 8 + 8,
+      speedY: Math.random() * 0.5 + 0.3,
+      speedX: (Math.random() - 0.5) * 0.4,
+      char: heartEmojis[Math.floor(Math.random() * heartEmojis.length)],
+      opacity: Math.random() * 0.2 + 0.25,
     }));
 
-    const render = () => {
+    let startTime = performance.now();
+
+    const drawHeart = (c: CanvasRenderingContext2D, size: number) => {
+      c.beginPath();
+      const topY = -size * 0.35;
+      c.moveTo(0, topY + size * 0.35);
+      c.bezierCurveTo(-size * 0.5, topY, -size * 0.85, topY + size * 0.45, 0, topY + size * 1.05);
+      c.bezierCurveTo(size * 0.85, topY + size * 0.45, size * 0.5, topY, 0, topY + size * 0.35);
+      c.closePath();
+    };
+
+    const render = (now: number) => {
+      const elapsed = now - startTime;
       ctx.clearRect(0, 0, width, height);
-      ctx.globalAlpha = 0.35;
-      particles.forEach((p) => {
-        ctx.font = `${p.size}px serif`;
-        ctx.fillText(p.char, p.x, p.y);
-        p.y -= p.speedY;
-        p.x += p.speedX;
-        if (p.y < -20) {
-          p.y = height + 20;
-          p.x = Math.random() * width;
+
+      // 1. Draw floating birthday balloons
+      balloons.forEach((b) => {
+        // Update vertical position (drifting upwards from bottom to top)
+        b.y -= b.speedY;
+        const sway = Math.sin(elapsed * b.swayFreq + b.swayPhase);
+        b.x = b.baseX + sway * b.swayAmp;
+        const tilt = Math.cos(elapsed * b.swayFreq + b.swayPhase) * 0.12;
+
+        // Reset to bottom once it drifts off screen
+        const maxOffset = b.radiusY + b.stringLength + 30;
+        if (b.y < -maxOffset) {
+          b.y = height + maxOffset + Math.random() * 50;
+          b.baseX = Math.random() * width;
+          b.theme = balloonThemes[Math.floor(Math.random() * balloonThemes.length)];
         }
+
+        ctx.save();
+        ctx.globalAlpha = b.opacity;
+        ctx.translate(b.x, b.y);
+        ctx.rotate(tilt);
+
+        if (b.isHeart) {
+          // Heart-shaped balloon
+          const heartSize = b.radiusY * 1.1;
+          const grad = ctx.createRadialGradient(
+            -heartSize * 0.2,
+            -heartSize * 0.2,
+            heartSize * 0.1,
+            0,
+            0,
+            heartSize * 1.1
+          );
+          grad.addColorStop(0, b.theme.highlight);
+          grad.addColorStop(0.5, b.theme.main);
+          grad.addColorStop(1, b.theme.dark);
+
+          ctx.fillStyle = grad;
+          drawHeart(ctx, heartSize);
+          ctx.fill();
+
+          // Knot
+          const knotY = heartSize * 0.72;
+          ctx.beginPath();
+          ctx.moveTo(-3, knotY + 4);
+          ctx.lineTo(3, knotY + 4);
+          ctx.lineTo(1.5, knotY);
+          ctx.lineTo(-1.5, knotY);
+          ctx.closePath();
+          ctx.fillStyle = b.theme.dark;
+          ctx.fill();
+
+          // String
+          ctx.beginPath();
+          ctx.moveTo(0, knotY + 4);
+          const sW1 = Math.sin(elapsed * 0.003 + b.swayPhase) * 5;
+          const sW2 = Math.cos(elapsed * 0.0025 + b.swayPhase) * 7;
+          ctx.bezierCurveTo(sW1, knotY + b.stringLength * 0.35, sW2, knotY + b.stringLength * 0.7, sW1 * 0.4, knotY + b.stringLength);
+          ctx.strokeStyle = 'rgba(255, 175, 190, 0.45)';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        } else {
+          // Classic oval party balloon
+          const grad = ctx.createRadialGradient(
+            -b.radiusX * 0.3,
+            -b.radiusY * 0.35,
+            b.radiusX * 0.1,
+            0,
+            0,
+            b.radiusY * 1.1
+          );
+          grad.addColorStop(0, b.theme.highlight);
+          grad.addColorStop(0.5, b.theme.main);
+          grad.addColorStop(1, b.theme.dark);
+
+          ctx.beginPath();
+          ctx.ellipse(0, 0, b.radiusX, b.radiusY, 0, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          // Specular shine (glossy 3D reflection)
+          ctx.beginPath();
+          ctx.ellipse(
+            -b.radiusX * 0.38,
+            -b.radiusY * 0.36,
+            b.radiusX * 0.22,
+            b.radiusY * 0.34,
+            -Math.PI / 4,
+            0,
+            Math.PI * 2
+          );
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+          ctx.fill();
+
+          // Balloon knot
+          const knotY = b.radiusY + 1;
+          ctx.beginPath();
+          ctx.moveTo(-3.5, knotY + 4);
+          ctx.lineTo(3.5, knotY + 4);
+          ctx.lineTo(1.5, knotY);
+          ctx.lineTo(-1.5, knotY);
+          ctx.closePath();
+          ctx.fillStyle = b.theme.dark;
+          ctx.fill();
+
+          // Sinuous balloon string
+          ctx.beginPath();
+          ctx.moveTo(0, knotY + 4);
+          const sW1 = Math.sin(elapsed * 0.003 + b.swayPhase) * 6;
+          const sW2 = Math.cos(elapsed * 0.0025 + b.swayPhase) * 8;
+          ctx.bezierCurveTo(sW1, knotY + b.stringLength * 0.35, sW2, knotY + b.stringLength * 0.7, sW1 * 0.4, knotY + b.stringLength);
+          ctx.strokeStyle = 'rgba(255, 175, 190, 0.45)';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+
+        ctx.restore();
       });
+
+      // 2. Draw ambient gentle sparkles/hearts
+      sparkles.forEach((s) => {
+        ctx.save();
+        ctx.globalAlpha = s.opacity;
+        ctx.font = `${s.size}px serif`;
+        ctx.fillText(s.char, s.x, s.y);
+        s.y -= s.speedY;
+        s.x += s.speedX;
+        if (s.y < -20) {
+          s.y = height + 20;
+          s.x = Math.random() * width;
+        }
+        ctx.restore();
+      });
+
+      // 3. Draw falling hearts shower (triggered by clicks and scrolling)
+      const falling = fallingHeartsRef.current;
+      for (let i = falling.length - 1; i >= 0; i--) {
+        const fh = falling[i];
+        fh.y += fh.speedY;
+        fh.x += fh.speedX;
+        const sway = Math.sin(elapsed * fh.swayFreq + fh.swayPhase) * fh.swayAmp;
+        const currentX = fh.x + sway;
+        fh.rotation += fh.rotationSpeed;
+
+        ctx.save();
+        ctx.globalAlpha = fh.opacity;
+        ctx.translate(currentX, fh.y);
+        ctx.rotate(Math.sin(fh.rotation) * 0.3);
+        ctx.font = `${fh.size}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(fh.char, 0, 0);
+        ctx.restore();
+
+        // Remove if past bottom of viewport
+        if (fh.y > height + 40) {
+          falling.splice(i, 1);
+        }
+      }
+
       animId = requestAnimationFrame(render);
     };
 
-    render();
+    animId = requestAnimationFrame(render);
 
     return () => {
       cancelAnimationFrame(animId);
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('resize', setupCanvasSize);
     };
   }, []);
 
@@ -394,6 +708,7 @@ export default function App() {
   const handleBlowCandles = () => {
     if (blownOut) return;
     setBlownOut(true);
+    triggerFallingHearts(22);
     confetti({ particleCount: 90, spread: 75, origin: { y: 0.6 } });
     if (!isPlaying) {
       toggleMusic();
@@ -479,7 +794,32 @@ export default function App() {
 
   const handleYes = () => {
     setAgreed(true);
+    triggerFallingHearts(20);
     confetti({ particleCount: 70, spread: 80, origin: { y: 0.7 } });
+  };
+
+  // 365 Reasons Jar Interaction
+  const handleOpenReason = () => {
+    setIsJarShaking(true);
+    triggerFallingHearts(16);
+    setTimeout(() => setIsJarShaking(false), 500);
+
+    const randomIdx = Math.floor(Math.random() * loveReasons.length);
+    const reasonNum = Math.floor(Math.random() * 365) + 1;
+    setOpenedReason({ num: reasonNum, text: loveReasons[randomIdx] });
+    setOpenedCount((prev) => prev + 1);
+
+    confetti({
+      particleCount: 45,
+      spread: 65,
+      origin: { y: 0.65 }
+    });
+  };
+
+  const toggleFavorite = (num: number) => {
+    setFavorites((prev) =>
+      prev.includes(num) ? prev.filter((n) => n !== num) : [...prev, num]
+    );
   };
 
   // Touch Scratch-off Card setup & reseal
@@ -621,6 +961,7 @@ export default function App() {
           onClick={() => {
             startMusic();
             setHasEntered(true);
+            triggerFallingHearts(20);
             confetti({ particleCount: 90, spread: 80, origin: { y: 0.6 } });
           }}
         >
@@ -637,6 +978,7 @@ export default function App() {
               onClick={() => {
                 startMusic();
                 setHasEntered(true);
+                triggerFallingHearts(24);
                 confetti({ particleCount: 110, spread: 85, origin: { y: 0.6 } });
               }}
             >
@@ -671,9 +1013,18 @@ export default function App() {
               transform: bearScale ? 'scale(1.08) rotate(2deg)' : 'scale(1) rotate(0deg)'
             }}
             onClick={handlePetBears}
-            title="Tap us for hugs!"
+            title="Tap us to change messages!"
           >
-            <div className="bear-bubble">{bearQuotes[bearQuoteIdx]}</div>
+            <div className="bear-bubble" key={bearQuoteIdx}>
+              <span>{bearQuotes[bearQuoteIdx]}</span>
+              <span className="bear-bubble-counter">{bearQuoteIdx + 1}/{bearQuotes.length}</span>
+            </div>
+
+            {/* Interactive Tap Badge */}
+            <div className="bear-tap-badge">
+              <span className="tap-hand">👆</span>
+              <span>Tap us to change message! 🐾</span>
+            </div>
 
             {/* Milk and Mocha Bear Graphic */}
             <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -849,12 +1200,12 @@ export default function App() {
                   <div className="polaroid-img-wrapper">
                     <img
                       src={couplePhoto}
-                      alt="Where it all began"
+                      alt="Our Precious Moment"
                       className="polaroid-photo"
                       loading="eager"
                     />
                   </div>
-                  <div className="polaroid-caption">Where it all began 💕</div>
+                  <div className="polaroid-caption">Our Precious Moment 💕</div>
                 </div>
 
                 {/* Back with Sweet Note */}
@@ -870,30 +1221,131 @@ export default function App() {
           </div>
         </section>
 
-        {/* 5. Reasons Why I Love You */}
-        <section className="card">
-          <h2 style={{ fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 700 }}>
-            Why You&apos;re My Favorite Person 🐾
+        {/* 5. The Little Jar of 365 Reasons */}
+        <section className="card" id="loveJarSection">
+          <div className="hero-badge" style={{ marginBottom: '8px' }}>✨ Daily Love Capsule ✨</div>
+          <h2 style={{ fontSize: '22px', color: 'var(--primary-dark)', fontWeight: 700, margin: '2px 0 6px' }}>
+            Little Jar of 365 Reasons 🫙💖
           </h2>
-          <div className="reasons-list">
-            <div className="reason-item">
-              <span className="reason-icon">💖</span>
-              <div>
-                <strong>Your contagious laugh:</strong> Just like Milk&apos;s cute giggles, it brightens up my whole universe.
-              </div>
+          <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.5, maxWidth: '340px', margin: '0 auto 14px' }}>
+            A folded love note for every single day of the year. Tap the jar to pull out a secret reason why I fell in love with you!
+          </p>
+
+          <div className="love-jar-container">
+            <div
+              className={`jar-wrapper ${isJarShaking ? 'shaking' : ''}`}
+              onClick={handleOpenReason}
+              title="Tap to pull out a love note!"
+            >
+              <div className="jar-glow" />
+              <svg className="jar-svg" width="140" height="175" viewBox="0 0 140 175" fill="none">
+                {/* Jar Lid / Cork */}
+                <rect x="42" y="10" width="56" height="14" rx="4" fill="#d4a373" stroke="#b07d56" strokeWidth="2" />
+                <rect x="48" y="24" width="44" height="8" rx="2" fill="#e9c49a" stroke="#b07d56" strokeWidth="1.5" />
+                
+                {/* Pink Ribbon & Bow */}
+                <path d="M44 28 C55 31, 85 31, 96 28" stroke="#ff5e7e" strokeWidth="4" strokeLinecap="round" />
+                <circle cx="70" cy="30" r="4" fill="#ff5e7e" />
+                <path d="M70 30 C64 26, 56 34, 70 30 Z" fill="#ff758f" />
+                <path d="M70 30 C76 26, 84 34, 70 30 Z" fill="#ff758f" />
+                
+                {/* Hanging Tag */}
+                <path d="M70 32 L88 50 L84 62 L74 60 Z" fill="#fff5f5" stroke="#ffb3c1" strokeWidth="1" />
+                <circle cx="73" cy="36" r="1.5" fill="#ff5e7e" />
+                <text x="76" y="56" fontSize="7" fill="#e11d48" fontWeight="bold">365 💌</text>
+
+                {/* Glass Jar Body */}
+                <rect x="25" y="32" width="90" height="135" rx="24" fill="rgba(255, 255, 255, 0.45)" stroke="#ffccd5" strokeWidth="2.5" />
+                
+                {/* Glass Reflections */}
+                <path d="M34 46 C32 70, 32 135, 34 150" stroke="rgba(255, 255, 255, 0.85)" strokeWidth="3.5" strokeLinecap="round" />
+                <path d="M40 48 C38 65, 38 80, 40 92" stroke="rgba(255, 255, 255, 0.5)" strokeWidth="1.5" strokeLinecap="round" />
+
+                {/* Folded Origami Hearts / Stars inside jar */}
+                <circle cx="50" cy="148" r="8" fill="#ff758f" />
+                <circle cx="50" cy="148" r="4" fill="#ffccd5" opacity="0.6" />
+                <circle cx="70" cy="150" r="9" fill="#ffd166" />
+                <circle cx="70" cy="150" r="5" fill="#fff1c2" opacity="0.6" />
+                <circle cx="90" cy="146" r="8.5" fill="#c084fc" />
+                <circle cx="90" cy="146" r="4.5" fill="#f3e8ff" opacity="0.6" />
+                <circle cx="42" cy="132" r="7.5" fill="#6ee7b7" />
+                <circle cx="62" cy="134" r="8.5" fill="#ff8fa3" />
+                <circle cx="82" cy="130" r="8" fill="#38bdf8" />
+                <circle cx="98" cy="134" r="7" fill="#f472b6" />
+                <circle cx="52" cy="116" r="8" fill="#fb923c" />
+                <circle cx="72" cy="118" r="7.5" fill="#a78bfa" />
+                <circle cx="88" cy="114" r="8.5" fill="#fb7185" />
+                <circle cx="60" cy="100" r="7.5" fill="#fcd34d" />
+                <circle cx="78" cy="102" r="8" fill="#f43f5e" />
+                <circle cx="68" cy="86" r="7" fill="#ec4899" />
+                
+                {/* Subtle Star/Heart icons on origami beads */}
+                <text x="47" y="151" fontSize="8" fill="#fff">★</text>
+                <text x="67" y="153" fontSize="8" fill="#fff">♥</text>
+                <text x="87" y="149" fontSize="8" fill="#fff">★</text>
+                <text x="59" y="137" fontSize="8" fill="#fff">♥</text>
+                <text x="79" y="133" fontSize="8" fill="#fff">★</text>
+                <text x="69" y="121" fontSize="8" fill="#fff">♥</text>
+                <text x="75" y="105" fontSize="8" fill="#fff">★</text>
+              </svg>
             </div>
-            <div className="reason-item">
-              <span className="reason-icon">☕</span>
-              <div>
-                <strong>Our quiet cuddles:</strong> Just being together, warm and cozy like two little bears.
+
+            {!openedReason ? (
+              <button
+                type="button"
+                className="btn-jar-pick"
+                onClick={handleOpenReason}
+                style={{ marginTop: '14px' }}
+              >
+                <span>🫙</span>
+                <span>Open a Love Note ✨</span>
+              </button>
+            ) : (
+              <div className="jar-opened-note" key={`${openedReason.num}-${openedCount}`}>
+                <div className="note-washi-tape" />
+                <div className="note-number-pill">
+                  <span>💌</span>
+                  <span>Reason #{openedReason.num} of 365</span>
+                </div>
+                <div className="note-text">
+                  &ldquo;{openedReason.text}&rdquo;
+                </div>
+                <div className="note-signoff">
+                  — Forever Yours, Shubham 🐻❤️
+                </div>
+                <div className="note-actions">
+                  <button
+                    type="button"
+                    className="btn-jar-pick"
+                    onClick={handleOpenReason}
+                  >
+                    <span>✨</span>
+                    <span>Pick Another Reason</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn-jar-fav ${favorites.includes(openedReason.num) ? 'favorited' : ''}`}
+                    onClick={() => toggleFavorite(openedReason.num)}
+                  >
+                    <span>{favorites.includes(openedReason.num) ? '❤️' : '🤍'}</span>
+                    <span>{favorites.includes(openedReason.num) ? 'Saved in Favorites' : 'Save to Favorites'}</span>
+                  </button>
+                </div>
               </div>
+            )}
+
+            <div className="jar-stats-bar">
+              <span>🫙 <strong>{openedCount}</strong> {openedCount === 1 ? 'note' : 'notes'} unfolded</span>
+              <span>•</span>
+              <span>💖 <strong>{favorites.length}</strong> saved</span>
             </div>
-            <div className="reason-item">
-              <span className="reason-icon">✨</span>
-              <div>
-                <strong>Your kindest heart:</strong> How deeply and tenderly you care for everyone around you.
+
+            {/* Quick favorites list if she saved any */}
+            {favorites.length > 0 && (
+              <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--primary-dark)', fontWeight: 600 }}>
+                Favorites saved: {favorites.map(num => `#${num}`).join(', ')} 💕
               </div>
-            </div>
+            )}
           </div>
         </section>
 
