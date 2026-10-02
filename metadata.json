@@ -1,0 +1,6 @@
+{
+  "name": "Happy Birthday, My Love!",
+  "description": "A romantic, interactive birthday celebration website created with love by Shubham for his girlfriend, featuring Milk & Mocha bears, interactive cake, music, polaroid memories, love letter, and surprises.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
