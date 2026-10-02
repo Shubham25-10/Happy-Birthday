@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
+import { couplePhoto } from './assets/photoData';
 
 const heartEmojis = ['💖', '💕', '💗', '💓', '✨', '🌸', '🐾'];
 
@@ -91,11 +92,6 @@ export default function App() {
 
   // Polaroid state
   const [isFlipped, setIsFlipped] = useState(false);
-  const [userPhotoUrl, setUserPhotoUrl] = useState<string | null>(() => {
-    return localStorage.getItem('birthday_photo_custom') || 'IMG_3213.jpg';
-  });
-  const [photoLoadError, setPhotoLoadError] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Scratch card canvas ref & custom context
   const scratchCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -576,38 +572,6 @@ export default function App() {
     return () => observer.disconnect();
   }, []);
 
-  // Custom photo upload helper
-  const processPhotoFile = (file: File) => {
-    // 1. Upload to server to persist in public/IMG_3213.jpg
-    fetch('/api/upload-photo', {
-      method: 'POST',
-      body: file,
-    }).catch(() => {});
-
-    // 2. Read locally for instant display
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      if (result) {
-        setUserPhotoUrl(result);
-        setPhotoLoadError(false);
-        try {
-          localStorage.setItem('birthday_photo_custom', result);
-        } catch {
-          // Ignore quota exceeded errors
-        }
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processPhotoFile(file);
-    }
-  };
-
   return (
     <>
       {/* Background Floating Hearts Canvas */}
@@ -628,15 +592,6 @@ export default function App() {
         <span className={`music-icon ${isPlaying ? 'playing' : ''}`}>🎂</span>
         <span>{isPlaying ? 'Playing 🎶' : 'Birthday Song 🎵'}</span>
       </button>
-
-      {/* Hidden file input for photo upload */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={handlePhotoSelect}
-      />
 
       <main className="app-container">
         {/* 1. Hero & Milk + Mocha Feature */}
@@ -820,121 +775,19 @@ export default function App() {
           <div className="polaroid-grid">
             <div
               className={`polaroid-card ${isFlipped ? 'flipped' : ''}`}
-              onClick={(e) => {
-                const target = e.target as HTMLElement;
-                if (target.closest('.photo-attach-btn') || target.closest('.photo-picker-trigger') || photoLoadError) {
-                  return;
-                }
-                setIsFlipped(!isFlipped);
-              }}
+              onClick={() => setIsFlipped(!isFlipped)}
             >
               <div className="polaroid-inner">
-                {/* Front with Photo */}
+                {/* Front with Permanent Photo */}
                 <div className="polaroid-front">
                   <div className="polaroid-tape" />
-                  <div
-                    className="polaroid-img-wrapper"
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const file = e.dataTransfer.files?.[0];
-                      if (file) processPhotoFile(file);
-                    }}
-                  >
-                    {!photoLoadError && userPhotoUrl ? (
-                      <>
-                        <img
-                          src={userPhotoUrl}
-                          alt="Where it all began"
-                          className="polaroid-photo"
-                          referrerPolicy="no-referrer"
-                          onError={() => {
-                            if (userPhotoUrl === 'IMG_3213.jpg') {
-                              setUserPhotoUrl('IMG_3213.JPG');
-                            } else if (userPhotoUrl === 'IMG_3213.JPG') {
-                              setUserPhotoUrl('our-photo.jpg');
-                            } else {
-                              setPhotoLoadError(true);
-                            }
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="photo-attach-btn"
-                          title="Change photo"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            fileInputRef.current?.click();
-                          }}
-                          style={{
-                            position: 'absolute',
-                            top: '10px',
-                            right: '10px',
-                            background: 'rgba(255, 255, 255, 0.9)',
-                            backdropFilter: 'blur(6px)',
-                            border: '1px solid rgba(255, 182, 193, 0.6)',
-                            borderRadius: '999px',
-                            padding: '4px 10px',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            color: 'var(--primary-dark)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-                            zIndex: 10
-                          }}
-                        >
-                          📷 Change
-                        </button>
-                      </>
-                    ) : (
-                      <div
-                        className="photo-picker-trigger"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          fileInputRef.current?.click();
-                        }}
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: 'linear-gradient(135deg, #fff2f5 0%, #ffe3e8 100%)',
-                          color: '#e63956',
-                          borderRadius: '14px',
-                          border: '2px dashed #ff9ebb',
-                          padding: '24px 16px',
-                          textAlign: 'center',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <div style={{ fontSize: '46px', marginBottom: '10px' }}>📸</div>
-                        <div style={{ fontFamily: 'Dancing Script, cursive', fontSize: '26px', fontWeight: 700, color: 'var(--primary-dark)' }}>
-                          Attach Our Photo 💕
-                        </div>
-                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '8px', maxWidth: '240px' }}>
-                          Tap here to attach <strong>IMG_3213.jpg</strong>
-                        </p>
-                        <span
-                          style={{
-                            marginTop: '14px',
-                            background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%)',
-                            color: '#ffffff',
-                            padding: '8px 20px',
-                            borderRadius: '999px',
-                            fontSize: '13px',
-                            fontWeight: 700,
-                            boxShadow: '0 4px 12px rgba(255, 94, 126, 0.3)'
-                          }}
-                        >
-                          Select Picture 💖
-                        </span>
-                      </div>
-                    )}
+                  <div className="polaroid-img-wrapper">
+                    <img
+                      src={couplePhoto}
+                      alt="Where it all began"
+                      className="polaroid-photo"
+                      loading="eager"
+                    />
                   </div>
                   <div className="polaroid-caption">Where it all began 💕</div>
                 </div>
