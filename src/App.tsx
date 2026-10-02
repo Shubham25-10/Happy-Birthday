@@ -254,6 +254,7 @@ export default function App() {
   const scratchCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const scratchCleanupRef = useRef<(() => void) | null>(null);
   const lastScratchPosRef = useRef<{ x: number; y: number } | null>(null);
+  const isFoilDrawnRef = useRef<boolean>(false);
   const [scratchSurprise] = useState<string>(() => {
     const saved = localStorage.getItem('birthday_scratch_surprise');
     if (!saved || saved === 'Your Favorite Dinner + A Secret Gift Tonight!') {
@@ -1097,11 +1098,14 @@ export default function App() {
   };
 
   // Touch Scratch-off Card setup & reseal
-  const initScratchCanvas = (el?: HTMLCanvasElement | null) => {
+  const initScratchCanvas = (el?: HTMLCanvasElement | null, force = false) => {
     const canvas = el || scratchCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Only draw foil once per page session unless explicitly forced
+    if (isFoilDrawnRef.current && !force) return;
 
     // Fixed crisp canvas coordinates
     const width = 290;
@@ -1146,6 +1150,8 @@ export default function App() {
     ctx.font = '12px sans-serif';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
     ctx.fillText('Rub to reveal surprise! 🎁', width / 2, height / 2 + 16);
+
+    isFoilDrawnRef.current = true;
   };
 
   const eraseAtPos = (clientX: number, clientY: number, isMove = false) => {
@@ -1185,14 +1191,24 @@ export default function App() {
 
   // Callback ref attaching native touch & pointer listeners directly to live DOM node
   const setCanvasRef = (canvas: HTMLCanvasElement | null) => {
-    if (scratchCleanupRef.current) {
-      scratchCleanupRef.current();
-      scratchCleanupRef.current = null;
+    if (!canvas) {
+      if (scratchCleanupRef.current) {
+        scratchCleanupRef.current();
+        scratchCleanupRef.current = null;
+      }
+      scratchCanvasRef.current = null;
+      return;
     }
-    scratchCanvasRef.current = canvas;
-    if (!canvas) return;
 
-    initScratchCanvas(canvas);
+    scratchCanvasRef.current = canvas;
+
+    // Draw foil only ONCE on initial load. Re-renders will NEVER reset it!
+    if (!isFoilDrawnRef.current) {
+      initScratchCanvas(canvas, true);
+    }
+
+    // Don't re-attach event listeners if already attached to this canvas
+    if (scratchCleanupRef.current) return;
 
     let isScratchingNow = false;
 
@@ -1260,16 +1276,6 @@ export default function App() {
       canvas.removeEventListener('pointercancel', onPointerUp);
     };
   };
-
-  useEffect(() => {
-    if (hasEntered) {
-      initScratchCanvas();
-      const timer = setTimeout(() => {
-        initScratchCanvas();
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [hasEntered]);
 
   // Typewriter Letter Observer
   useEffect(() => {
@@ -2178,7 +2184,7 @@ export default function App() {
               type="button"
               className="btn-reseal-scratch"
               onClick={() => {
-                initScratchCanvas();
+                initScratchCanvas(null, true);
                 triggerFallingHearts(14);
               }}
             >
