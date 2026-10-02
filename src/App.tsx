@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { couplePhoto } from './assets/photoData';
+import birthdaySong from './assets/birthday.mp3';
 
 const heartEmojis = ['💖', '💕', '💗', '💓', '✨', '🌸', '🐾'];
 
@@ -74,6 +75,7 @@ export default function App() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const synthTimeoutRef = useRef<number | null>(null);
   const bgAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [hasEntered, setHasEntered] = useState(false);
 
   // Bear interaction state
   const [bearQuoteIdx, setBearQuoteIdx] = useState(0);
@@ -274,23 +276,35 @@ export default function App() {
   };
 
   const startMusic = () => {
-    if (isPlayingRef.current) return;
     isPlayingRef.current = true;
     setIsPlaying(true);
 
-    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume().catch(() => {});
-    }
+    // 1. Initialize & resume Web Audio context
+    try {
+      if (!audioCtxRef.current) {
+        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        audioCtxRef.current = new AudioContextClass();
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume();
+      }
+    } catch {}
 
+    // 2. Play HTML5 audio element
     const bgAudio = bgAudioRef.current;
     if (bgAudio) {
       bgAudio.volume = 1.0;
-      bgAudio
-        .play()
-        .then(() => {})
-        .catch(() => {
-          playMusicBoxTune();
-        });
+      const promise = bgAudio.play();
+      if (promise !== undefined) {
+        promise
+          .then(() => {
+            // HTML5 audio playing successfully
+          })
+          .catch(() => {
+            // If HTML5 element is still blocked or fails, use Web Audio API music box
+            playMusicBoxTune();
+          });
+      }
     } else {
       playMusicBoxTune();
     }
@@ -315,13 +329,30 @@ export default function App() {
 
   // Autoplay on load & mobile first-touch/scroll unlock
   useEffect(() => {
-    // 1. Attempt immediate autoplay
-    startMusic();
+    // 1. Attempt immediate autoplay on initial render
+    const bgAudio = bgAudioRef.current;
+    if (bgAudio) {
+      bgAudio.volume = 1.0;
+      const promise = bgAudio.play();
+      if (promise !== undefined) {
+        promise
+          .then(() => {
+            // Autoplay succeeded immediately! (e.g. desktop or permitted policy)
+            isPlayingRef.current = true;
+            setIsPlaying(true);
+            setHasEntered(true);
+          })
+          .catch(() => {
+            // Waiting for user tap
+          });
+      }
+    }
 
     // 2. Mobile browsers require a gesture before allowing audio playback.
-    // Register one-time passive window listeners so her very first touch or scroll starts the music!
+    // Register one-time passive window listeners so her very first touch or scroll starts the music and unlocks the screen!
     const unlockAudio = () => {
       startMusic();
+      setHasEntered(true);
       removeUnlock();
     };
 
@@ -577,10 +608,44 @@ export default function App() {
       {/* Background Floating Hearts Canvas */}
       <canvas id="hearts-canvas" ref={canvasRef} />
 
-      {/* Audio Element */}
-      <audio ref={bgAudioRef} loop preload="auto" playsInline>
-        <source src="https://assets.mixkit.co/music/preview/mixkit-happy-birthday-to-you-443.mp3" type="audio/mpeg" />
+      {/* Audio Element with Local Bundled Audio */}
+      <audio ref={bgAudioRef} loop preload="auto" playsInline src={birthdaySong}>
+        <source src={birthdaySong} type="audio/mpeg" />
+        <source src="birthday.mp3" type="audio/mpeg" />
       </audio>
+
+      {/* Opening Surprise Curtain for 100% Guaranteed Audio Playback on Mobile & Desktop */}
+      {!hasEntered && (
+        <div
+          className="welcome-overlay"
+          onClick={() => {
+            startMusic();
+            setHasEntered(true);
+            confetti({ particleCount: 90, spread: 80, origin: { y: 0.6 } });
+          }}
+        >
+          <div className="welcome-card" onClick={(e) => e.stopPropagation()}>
+            <div className="welcome-tag">Special Delivery for Birthday Girl 💌</div>
+            <div className="welcome-gift-icon">🎁</div>
+            <h1 className="welcome-title">Happy Birthday, Cutie! 💖</h1>
+            <p className="welcome-subtitle">
+              A sweet birthday celebration made with all my love, just for you.
+            </p>
+            <button
+              type="button"
+              className="welcome-open-btn"
+              onClick={() => {
+                startMusic();
+                setHasEntered(true);
+                confetti({ particleCount: 110, spread: 85, origin: { y: 0.6 } });
+              }}
+            >
+              <span>Tap to Open Your Card 🎶✨</span>
+            </button>
+            <div className="welcome-note">🎵 Birthday song starts automatically!</div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Music Pill */}
       <button
