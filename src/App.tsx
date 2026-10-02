@@ -2,6 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { couplePhoto } from './assets/photoData';
 import birthdaySong from './assets/birthday.mp3';
+import {
+  connectGoogleGmail,
+  sendWishViaGmailApi,
+  disconnectGmail,
+  initAuth
+} from './services/gmail';
+import { User } from 'firebase/auth';
 
 const heartEmojis = ['💖', '💕', '💗', '💓', '✨', '🌸', '🐾'];
 
@@ -164,32 +171,100 @@ export default function App() {
   });
 
   // Write a Wish State
-  const [savedWish, setSavedWish] = useState<string>(() => {
-    return localStorage.getItem('birthday_girl_wish') || '';
-  });
   const [wishInput, setWishInput] = useState('');
-  const [isEditingWish, setIsEditingWish] = useState(false);
+  const [lastSentWish, setLastSentWish] = useState<string | null>(null);
+  const [wishSentNotification, setWishSentNotification] = useState<string | null>(null);
+  const [serverWishes, setServerWishes] = useState<Array<{ id: string; wish: string; date: string }>>([]);
+  const [showVaultModal, setShowVaultModal] = useState(false);
+
+  // Gmail OAuth Integration State
+  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [isGmailConnecting, setIsGmailConnecting] = useState(false);
+  const [isSendingWish, setIsSendingWish] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<string | null>(null);
+
+  // Load server-side wishes
+  const loadWishes = async () => {
+    try {
+      const res = await fetch('/api/wishes');
+      if (res.ok) {
+        const data = await res.json();
+        setServerWishes(data);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    loadWishes();
+    const unsubscribe = initAuth(
+      (user) => {
+        setGoogleUser(user);
+      },
+      () => {
+        setGoogleUser(null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  const handleConnectGmail = async () => {
+    setIsGmailConnecting(true);
+    setEmailStatus(null);
+    try {
+      const res = await connectGoogleGmail();
+      setGoogleUser(res.user);
+      setEmailStatus('✅ Gmail connected! Wishes will be sent to ' + (res.user.email || 'your Gmail inbox') + ' 💌');
+      confetti({ particleCount: 45, spread: 60 });
+    } catch (err: any) {
+      console.error(err);
+      setEmailStatus('⚠️ Connection cancelled or failed. You can retry anytime.');
+    } finally {
+      setIsGmailConnecting(false);
+    }
+  };
+
+  const handleDisconnectGmail = async () => {
+    await disconnectGmail();
+    setGoogleUser(null);
+    setEmailStatus('Disconnected from Gmail.');
+  };
+
+  const handleSendWishToGmail = async (wishText: string) => {
+    if (!wishText) return;
+    try {
+      setEmailStatus('⏳ Sending to shubhamecom1999@gmail.com...');
+      await sendWishViaGmailApi(wishText, 'shubhamecom1999@gmail.com');
+      setEmailStatus('💌 Wish successfully delivered to shubhamecom1999@gmail.com!');
+      confetti({ particleCount: 50, spread: 75, origin: { y: 0.6 } });
+    } catch (err: any) {
+      console.error(err);
+      setEmailStatus('⚠️ Could not send directly. Please connect Gmail or use the mailto button.');
+    }
+  };
 
   // Scratch card canvas ref & custom context
   const scratchCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isScratching, setIsScratching] = useState(false);
-  const [scratchSurprise, setScratchSurprise] = useState<string>(() => {
+  const [scratchSurprise] = useState<string>(() => {
     const saved = localStorage.getItem('birthday_scratch_surprise');
     if (!saved || saved === 'Your Favorite Dinner + A Secret Gift Tonight!') {
       return 'Whatever you want as a gift 💕';
     }
     return saved;
   });
-  const [scratchTitle, setScratchTitle] = useState<string>(() => {
+  const [scratchTitle] = useState<string>(() => {
     return localStorage.getItem('birthday_scratch_title') || 'REDEEMABLE FOR:';
   });
-  const [isEditingScratch, setIsEditingScratch] = useState(false);
-  const [tempSurprise, setTempSurprise] = useState(scratchSurprise);
-  const [tempTitle, setTempTitle] = useState(scratchTitle);
 
   // Typewriter Love Letter
-  const fullLetter = "Another year around the sun, and you only become more radiant, compassionate, and inspiring with each passing day. Thank you for filling my world with so much warmth and happiness. I hope today brings you as much joy as you bring into my life every single second. Happy Birthday, my love!";
-  const [letterText, setLetterText] = useState("");
+  const defaultLetter = "My Dearest Cutie,\n\nAnother year around the sun, and you only become more radiant, compassionate, and inspiring with each passing day.\n\nThank you for filling my world with so much warmth, silly laughs, and infinite comfort. Being by your side is my greatest adventure, and I promise to love, protect, and cherish you through every single chapter of life.\n\nI hope today brings you as much joy, peace, and sweet treats as you bring into my life every single second.\n\nHappy Birthday, my love! 🎂💖";
+
+  const [fullLetter] = useState<string>(() => {
+    return localStorage.getItem('birthday_love_letter') || defaultLetter;
+  });
+  const [letterText, setLetterText] = useState<string>(() => {
+    return localStorage.getItem('birthday_love_letter') || defaultLetter;
+  });
   const letterPaperRef = useRef<HTMLDivElement | null>(null);
   const letterStartedRef = useRef(false);
 
@@ -746,13 +821,14 @@ export default function App() {
     }
   };
 
-  // Runaway "Nope" button with guaranteed distance jump
-  const moveNoButton = (e?: React.SyntheticEvent | MouseEvent | TouchEvent) => {
+  // Runaway "Nope" button with guaranteed instant jump
+  const moveNoButton = (e?: React.SyntheticEvent | MouseEvent | TouchEvent, force = false) => {
     if (e && 'preventDefault' in e) {
       e.preventDefault();
     }
     const now = Date.now();
-    if (now - lastMoveTimeRef.current < 90) return;
+    // Only throttle rapid background mousemove triggers; direct hover/touch always jumps instantly!
+    if (!force && now - lastMoveTimeRef.current < 45) return;
     lastMoveTimeRef.current = now;
 
     if (!twistAreaRef.current) return;
@@ -784,8 +860,8 @@ export default function App() {
     let targetTop = 0;
     let bestScore = -1;
 
-    // Evaluate 18 candidate coordinates across the area and pick the one furthest from the cursor
-    for (let i = 0; i < 18; i++) {
+    // Evaluate 24 candidate coordinates across the area and pick the one furthest from the cursor
+    for (let i = 0; i < 24; i++) {
       const candLeft = Math.floor(Math.random() * maxX) + 6;
       const candTop = Math.floor(Math.random() * maxY) + 4;
       const candCenterX = candLeft + btnWidth / 2;
@@ -796,9 +872,9 @@ export default function App() {
 
       // Avoid fully overlapping the center-left area where YES is
       const distFromYes = Math.hypot(candCenterX - (area.width / 2 - 60), candCenterY - (area.height / 2));
-      const penalty = distFromYes < 50 ? 50 : 0;
+      const penalty = distFromYes < 55 ? 60 : 0;
 
-      const score = distFromMouse * 1.6 + distFromPrev - penalty;
+      const score = distFromMouse * 2.0 + distFromPrev - penalty;
       if (score > bestScore) {
         bestScore = score;
         targetLeft = candLeft;
@@ -810,16 +886,16 @@ export default function App() {
     setNoEscapeCount((prev) => prev + 1);
   };
 
-  // Proximity detection on the button container: if mouse comes close (< 80px), flee!
-  const handleAreaMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  // Proximity detection: if cursor approaches within 100px, flee before it even touches!
+  const handleAreaMouseMove = (e: React.MouseEvent<HTMLElement>) => {
     if (agreed || !noBtnRef.current || !twistAreaRef.current) return;
     const btn = noBtnRef.current.getBoundingClientRect();
     const btnCenterX = btn.left + btn.width / 2;
     const btnCenterY = btn.top + btn.height / 2;
     const dist = Math.hypot(e.clientX - btnCenterX, e.clientY - btnCenterY);
 
-    if (dist < 80) {
-      moveNoButton(e);
+    if (dist < 100) {
+      moveNoButton(e, true);
     }
   };
 
@@ -928,13 +1004,42 @@ export default function App() {
   };
 
   const handleCastWish = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (!wishInput.trim()) return;
+    if (!wishInput.trim() || isSendingWish) return;
     const wish = wishInput.trim();
-    setSavedWish(wish);
-    try {
-      localStorage.setItem('birthday_girl_wish', wish);
-    } catch {}
-    setIsEditingWish(false);
+    setIsSendingWish(true);
+    setLastSentWish(wish);
+    setWishInput(''); // Clears and refreshes the message box every time!
+    setWishSentNotification(`💌 Wish "${wish.length > 30 ? wish.slice(0, 30) + '...' : wish}" was delivered straight to Shubham's Gmail (shubhamecom1999@gmail.com)!`);
+
+    // 1. Deliver directly to shubhamecom1999@gmail.com via FormSubmit
+    fetch('https://formsubmit.co/ajax/shubhamecom1999@gmail.com', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        _subject: `🎂 Birthday Girl's Wish: "${wish.slice(0, 35)}..." 💖`,
+        birthdayWish: wish,
+        date: new Date().toLocaleString(),
+        recipient: 'shubhamecom1999@gmail.com',
+        source: 'Birthday Website'
+      })
+    }).catch(() => {});
+
+    // 2. Also dispatch via Gmail API if user connected
+    if (googleUser) {
+      sendWishViaGmailApi(wish, 'shubhamecom1999@gmail.com').catch(() => {});
+    }
+
+    // 3. Save to server backend
+    fetch('/api/wishes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wish, date: new Date().toLocaleString() })
+    })
+      .then(() => loadWishes())
+      .catch(() => {});
 
     // Starlight effect
     const rect = e.currentTarget.getBoundingClientRect();
@@ -945,6 +1050,10 @@ export default function App() {
       spread: 80,
       origin: { y: 0.65 }
     });
+
+    setTimeout(() => {
+      setIsSendingWish(false);
+    }, 800);
   };
 
   // Touch Scratch-off Card setup & reseal
@@ -954,55 +1063,51 @@ export default function App() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const width = 280;
+    const height = 155;
+    canvas.width = width;
+    canvas.height = height;
+
     ctx.globalCompositeOperation = 'source-over';
-    canvas.width = 280;
-    canvas.height = 160;
 
     // Soft metallic pink gradient
-    const grad = ctx.createLinearGradient(0, 0, 280, 160);
+    const grad = ctx.createLinearGradient(0, 0, width, height);
     grad.addColorStop(0, '#fba7b8');
     grad.addColorStop(0.3, '#f4728f');
     grad.addColorStop(0.7, '#ff8fa3');
     grad.addColorStop(1, '#fba7b8');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 280, 160);
+    ctx.fillRect(0, 0, width, height);
 
     // Decorative inner border
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 2.5;
     ctx.setLineDash([6, 4]);
-    ctx.strokeRect(6, 6, 268, 148);
+    ctx.strokeRect(6, 6, width - 12, height - 12);
     ctx.setLineDash([]);
 
     // Typography
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'center';
-    ctx.shadowColor = 'rgba(0,0,0,0.2)';
+    ctx.shadowColor = 'rgba(0,0,0,0.25)';
     ctx.shadowBlur = 4;
-    ctx.fillText('✨ Scratch with finger ✨', 140, 72);
+    ctx.fillText('✨ Scratch with finger ✨', width / 2, 70);
     ctx.shadowBlur = 0;
     ctx.font = '12px sans-serif';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-    ctx.fillText('Tap & drag to reveal surprise', 140, 96);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillText('Rub to reveal surprise! 🎁', width / 2, 94);
   };
 
   useEffect(() => {
-    initScratchCanvas();
-  }, []);
-
-  const handleSaveScratchContext = () => {
-    setScratchSurprise(tempSurprise);
-    setScratchTitle(tempTitle);
-    try {
-      localStorage.setItem('birthday_scratch_surprise', tempSurprise);
-      localStorage.setItem('birthday_scratch_title', tempTitle);
-    } catch {}
-    setIsEditingScratch(false);
-    setTimeout(() => {
+    if (hasEntered) {
       initScratchCanvas();
-    }, 60);
-  };
+      const timer = setTimeout(() => {
+        initScratchCanvas();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [hasEntered]);
 
   const scratchAt = (clientX: number, clientY: number) => {
     const canvas = scratchCanvasRef.current;
@@ -1044,10 +1149,15 @@ export default function App() {
 
   // Typewriter Letter Observer
   useEffect(() => {
+    if (!hasEntered) return;
+    const element = letterPaperRef.current;
+    if (!element) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && !letterStartedRef.current) {
           letterStartedRef.current = true;
+          setLetterText("");
           let idx = 0;
           const interval = setInterval(() => {
             idx++;
@@ -1055,18 +1165,15 @@ export default function App() {
             if (idx >= fullLetter.length) {
               clearInterval(interval);
             }
-          }, 32);
+          }, 22);
         }
       },
-      { threshold: 0.25 }
+      { threshold: 0.15 }
     );
 
-    if (letterPaperRef.current) {
-      observer.observe(letterPaperRef.current);
-    }
-
+    observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [hasEntered, fullLetter]);
 
   return (
     <>
@@ -1078,6 +1185,134 @@ export default function App() {
         <source src={birthdaySong} type="audio/mpeg" />
         <source src="birthday.mp3" type="audio/mpeg" />
       </audio>
+
+      {/* Shubham's Wish Inbox Modal */}
+      {showVaultModal && (
+        <div className="vault-modal-overlay" onClick={() => setShowVaultModal(false)}>
+          <div className="vault-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: '32px', marginBottom: '6px' }}>🐻💌🔐</div>
+            <h3 style={{ fontSize: '18px', color: 'var(--primary-dark)', fontWeight: 700, margin: '0 0 6px' }}>
+              Shubham&apos;s Secret Wish Inbox
+            </h3>
+            <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginBottom: '14px' }}>
+              Wishes submitted on this website to <strong>shubhamecom1999@gmail.com</strong>:
+            </p>
+
+            {/* Gmail Connection Card */}
+            <div style={{ background: '#fdf2f4', border: '1.5px solid #ffccd5', borderRadius: '16px', padding: '12px', marginBottom: '14px' }}>
+              {googleUser ? (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '12.5px', color: '#10b981', fontWeight: 700 }}>
+                    <span>✅ Connected as</span>
+                    <span>{googleUser.email || 'shubhamecom1999@gmail.com'}</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Incoming wishes are dispatched directly to your inbox.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleDisconnectGmail}
+                    style={{ background: 'none', border: 'none', color: '#e63956', fontSize: '11px', textDecoration: 'underline', cursor: 'pointer', marginTop: '6px' }}
+                  >
+                    Disconnect Gmail
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontSize: '12px', color: '#594a4e', marginBottom: '8px' }}>
+                    Connect your Gmail to receive wishes directly:
+                  </div>
+                  <button
+                    type="button"
+                    className="gsi-material-button"
+                    onClick={handleConnectGmail}
+                    disabled={isGmailConnecting}
+                  >
+                    <div className="gsi-material-button-icon">
+                      <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style={{ display: 'block' }}>
+                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                        <path fill="none" d="M0 0h48v48H0z"></path>
+                      </svg>
+                    </div>
+                    <span className="gsi-material-button-contents">
+                      {isGmailConnecting ? 'Connecting...' : 'Connect with Google'}
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {emailStatus && (
+                <div style={{ fontSize: '11px', marginTop: '6px', color: 'var(--primary-dark)', fontWeight: 600 }}>
+                  {emailStatus}
+                </div>
+              )}
+            </div>
+
+            {/* List of Wishes */}
+            <div style={{ maxHeight: '180px', overflowY: 'auto', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {serverWishes.length > 0 ? (
+                serverWishes.map((w, idx) => (
+                  <div key={w.id || idx} style={{ background: '#fff0f3', border: '1px solid #ffd5dc', borderRadius: '12px', padding: '10px' }}>
+                    <div style={{ fontSize: '13.5px', color: '#33272a', fontWeight: 600, fontStyle: 'italic' }}>
+                      &ldquo;{w.wish}&rdquo;
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                      <span style={{ fontSize: '10.5px', color: 'var(--primary-dark)' }}>
+                        🕒 {w.date}
+                      </span>
+                      {googleUser && (
+                        <button
+                          type="button"
+                          onClick={() => handleSendWishToGmail(w.wish)}
+                          style={{ background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', padding: '3px 8px', cursor: 'pointer', fontWeight: 700 }}
+                        >
+                          Send to Gmail
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : lastSentWish ? (
+                <div style={{ background: '#fff0f3', border: '1px solid #ffd5dc', borderRadius: '12px', padding: '10px' }}>
+                  <div style={{ fontSize: '13.5px', color: '#33272a', fontWeight: 600, fontStyle: 'italic' }}>
+                    &ldquo;{lastSentWish}&rdquo;
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                    <span style={{ fontSize: '10.5px', color: 'var(--primary-dark)' }}>
+                      🕒 Latest Wish
+                    </span>
+                    {googleUser && (
+                      <button
+                        type="button"
+                        onClick={() => handleSendWishToGmail(lastSentWish)}
+                        style={{ background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', padding: '3px 8px', cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        Send to Gmail
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)', padding: '12px' }}>
+                  No wishes submitted yet! As soon as she writes one, it will appear here. ✨
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="welcome-open-btn"
+              style={{ marginTop: '16px', minHeight: '40px', padding: '10px 16px', fontSize: '13px' }}
+              onClick={() => setShowVaultModal(false)}
+            >
+              Close Inbox 💕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Opening Surprise Curtain for 100% Guaranteed Audio Playback on Mobile & Desktop */}
       {!hasEntered && (
@@ -1417,83 +1652,72 @@ export default function App() {
           </p>
 
           <div className="wish-card-container">
-            {!savedWish || isEditingWish ? (
-              <div className="wish-input-wrapper">
-                <textarea
-                  className="wish-textarea"
-                  value={wishInput}
-                  onChange={(e) => setWishInput(e.target.value)}
-                  placeholder="Type your deepest birthday wish here... (e.g., A trip to Japan together, infinite cuddles, endless desserts...)"
-                  rows={3}
-                />
-                <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '10px' }}>
-                  <button
-                    type="button"
-                    className="btn-cast-wish"
-                    onClick={handleCastWish}
-                    disabled={!wishInput.trim()}
-                    style={{ opacity: wishInput.trim() ? 1 : 0.6 }}
-                  >
-                    <span>✨</span>
-                    <span>Release Wish to the Stars</span>
-                    <span>⭐</span>
-                  </button>
-
-                  {savedWish && isEditingWish && (
-                    <button
-                      type="button"
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        fontSize: '12px',
-                        cursor: 'pointer',
-                        padding: '8px'
-                      }}
-                      onClick={() => setIsEditingWish(false)}
-                    >
-                      Cancel
-                    </button>
-                  )}
+            {wishSentNotification && (
+              <div className="wish-sent-success-banner">
+                <div style={{ fontWeight: 700, marginBottom: '2px', color: '#047857' }}>
+                  🎉 Wish Successfully Sent to Shubham!
                 </div>
-              </div>
-            ) : (
-              <div className="starlight-keepsake">
-                <div className="starlight-badge">
-                  <span>🌌</span>
-                  <span>Written in the Starlight</span>
-                  <span>✨</span>
+                <div>{wishSentNotification}</div>
+                <div style={{ fontSize: '11px', color: '#059669', marginTop: '4px' }}>
+                  The box is refreshed below — write as many wishes as you want! 💖
                 </div>
-
-                <div className="starlight-quote">
-                  &ldquo;{savedWish}&rdquo;
-                </div>
-
-                <p className="starlight-promise">
-                  Your wish has been received by the universe and locked in my heart. I promise to do everything in my power to make it come true.
-                </p>
-
-                <div style={{ fontSize: '12.5px', color: '#ffd166', fontWeight: 700, marginBottom: '14px' }}>
-                  — Forever Yours, Shubham 🐻❤️
-                </div>
-
-                <button
-                  type="button"
-                  className="btn-rewrite-wish"
-                  onClick={() => {
-                    setWishInput(savedWish);
-                    setIsEditingWish(true);
-                  }}
-                >
-                  ✏️ Edit or Make Another Wish
-                </button>
               </div>
             )}
+
+            <div className="wish-input-wrapper">
+              <textarea
+                className="wish-textarea"
+                value={wishInput}
+                onChange={(e) => setWishInput(e.target.value)}
+                placeholder="Type your birthday wish here for Shubham... (e.g., A romantic trip together, infinite cuddles, your favorite dessert...)"
+                rows={3}
+              />
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  className="btn-cast-wish"
+                  onClick={handleCastWish}
+                  disabled={!wishInput.trim() || isSendingWish}
+                  style={{ opacity: wishInput.trim() && !isSendingWish ? 1 : 0.65 }}
+                >
+                  <span>{isSendingWish ? '⏳' : '💌'}</span>
+                  <span>{isSendingWish ? 'Sending Wish to Shubham...' : 'Send Wish to Shubham'}</span>
+                  <span>{isSendingWish ? '✨' : '💖'}</span>
+                </button>
+              </div>
+            </div>
+
+            {lastSentWish && (
+              <div className="last-sent-wish-card">
+                <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--primary-dark)', marginBottom: '3px' }}>
+                  ✨ Latest Wish Received by Shubham:
+                </div>
+                <div style={{ fontStyle: 'italic', color: '#33272a', fontWeight: 600 }}>
+                  &ldquo;{lastSentWish}&rdquo;
+                </div>
+              </div>
+            )}
+
+            {/* Shubham Wish Vault Inspector */}
+            <button
+              type="button"
+              className="btn-shubham-vault-toggle"
+              onClick={() => {
+                loadWishes();
+                setShowVaultModal(true);
+              }}
+            >
+              <span>🐻🔐</span>
+              <span>Shubham&apos;s Wish Inbox ({serverWishes.length > 0 ? serverWishes.length : (lastSentWish ? 1 : 0)})</span>
+            </button>
           </div>
         </section>
 
         {/* 3. The Playful Twist (Runaway "No" Button) */}
-        <section className="card twist-box">
+        <section
+          className="card twist-box"
+          onMouseMove={handleAreaMouseMove}
+        >
           <div style={{ fontSize: '32px', marginBottom: '4px' }}>🐻🤍🐻</div>
           <h2 style={{ fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 700 }}>
             Quick Question... 🤔
@@ -1526,15 +1750,15 @@ export default function App() {
                   top: noPos ? `${noPos.top}px` : undefined,
                   margin: 0
                 }}
-                onMouseEnter={moveNoButton}
-                onMouseOver={moveNoButton}
-                onMouseMove={moveNoButton}
-                onPointerEnter={moveNoButton}
-                onPointerOver={moveNoButton}
-                onPointerMove={moveNoButton}
-                onTouchStart={moveNoButton}
-                onTouchMove={moveNoButton}
-                onClick={moveNoButton}
+                onMouseEnter={(e) => moveNoButton(e, true)}
+                onMouseOver={(e) => moveNoButton(e, true)}
+                onMouseMove={(e) => moveNoButton(e, true)}
+                onPointerEnter={(e) => moveNoButton(e, true)}
+                onPointerOver={(e) => moveNoButton(e, true)}
+                onPointerMove={(e) => moveNoButton(e, true)}
+                onTouchStart={(e) => moveNoButton(e, true)}
+                onTouchMove={(e) => moveNoButton(e, true)}
+                onClick={(e) => moveNoButton(e, true)}
               >
                 {nopePhrases[noEscapeCount % nopePhrases.length]}
               </button>
@@ -1720,142 +1944,14 @@ export default function App() {
 
         {/* 6. Digital Scratch-Off Card */}
         <section className="card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-            <h2 style={{ fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 700 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <h2 style={{ fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 700, margin: 0 }}>
               Birthday Pass 🎟️
             </h2>
-            <button
-              type="button"
-              onClick={() => {
-                setTempSurprise(scratchSurprise);
-                setTempTitle(scratchTitle);
-                setIsEditingScratch(!isEditingScratch);
-              }}
-              style={{
-                position: 'absolute',
-                right: 0,
-                background: 'rgba(255, 255, 255, 0.85)',
-                border: '1px solid rgba(255, 182, 193, 0.6)',
-                borderRadius: '999px',
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: 600,
-                color: 'var(--primary-dark)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-              title="Edit the surprise context"
-            >
-              ✏️ {isEditingScratch ? 'Cancel' : 'Edit Surprise'}
-            </button>
           </div>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
             Use your finger to scratch and reveal your surprise:
           </p>
-
-          {/* Edit Context Panel */}
-          {isEditingScratch && (
-            <div
-              style={{
-                marginTop: '12px',
-                padding: '14px',
-                background: '#fff9fa',
-                border: '1px solid #ffccd5',
-                borderRadius: '16px',
-                textAlign: 'left'
-              }}
-            >
-              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary-dark)', marginBottom: '4px' }}>
-                Badge Title:
-              </div>
-              <input
-                type="text"
-                value={tempTitle}
-                onChange={(e) => setTempTitle(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '7px 10px',
-                  borderRadius: '8px',
-                  border: '1px solid #ffccd5',
-                  fontSize: '13px',
-                  marginBottom: '10px'
-                }}
-                placeholder="e.g. REDEEMABLE FOR:"
-              />
-
-              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary-dark)', marginBottom: '4px' }}>
-                Hidden Surprise Context:
-              </div>
-              <textarea
-                value={tempSurprise}
-                onChange={(e) => setTempSurprise(e.target.value)}
-                rows={2}
-                style={{
-                  width: '100%',
-                  padding: '7px 10px',
-                  borderRadius: '8px',
-                  border: '1px solid #ffccd5',
-                  fontSize: '13px',
-                  resize: 'none'
-                }}
-                placeholder="Enter what this coupon gives her..."
-              />
-
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', marginBottom: '6px' }}>
-                Quick Romantic Ideas:
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
-                {[
-                  { t: "REDEEMABLE FOR:", s: "Whatever you want as a gift 💕" },
-                  { t: "SPECIAL COUPON:", s: "All-Day Shopping Spree & Infinite Cuddles 🛍️💖" },
-                  { t: "ROMANTIC PASS:", s: "Candlelight Dinner & Long Drive Under The Stars 🚗✨" },
-                  { t: "WEEKEND PASS:", s: "A Surprise Weekend Getaway Just For Us 🏖️✈️" }
-                ].map((preset, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => {
-                      setTempTitle(preset.t);
-                      setTempSurprise(preset.s);
-                    }}
-                    style={{
-                      background: '#ffffff',
-                      border: '1px solid #ffccd5',
-                      borderRadius: '999px',
-                      padding: '3px 9px',
-                      fontSize: '11px',
-                      color: 'var(--primary-dark)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {preset.s.slice(0, 24)}...
-                  </button>
-                ))}
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={handleSaveScratchContext}
-                  style={{
-                    flex: 1,
-                    background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%)',
-                    color: '#ffffff',
-                    border: 'none',
-                    padding: '8px 14px',
-                    borderRadius: '999px',
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Save &amp; Re-seal Card ✨
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="scratch-wrapper">
             <div className="scratch-secret">
@@ -1869,7 +1965,12 @@ export default function App() {
             </div>
             <canvas
               id="scratch-canvas"
-              ref={scratchCanvasRef}
+              ref={(el) => {
+                scratchCanvasRef.current = el;
+                if (el) {
+                  requestAnimationFrame(() => initScratchCanvas());
+                }
+              }}
               onTouchStart={handleScratchStart}
               onTouchMove={handleScratchMove}
               onTouchEnd={handleScratchEnd}
@@ -1879,36 +1980,36 @@ export default function App() {
             />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginTop: '6px' }}>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Valid anytime • Non-transferable • Infinite cuddles included
-            </p>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
             <button
               type="button"
-              onClick={initScratchCanvas}
-              style={{
-                background: 'none',
-                border: 'none',
-                fontSize: '11px',
-                color: 'var(--primary)',
-                textDecoration: 'underline',
-                cursor: 'pointer',
-                padding: '2px 4px'
+              className="btn-reseal-scratch"
+              onClick={() => {
+                initScratchCanvas();
+                triggerFallingHearts(14);
               }}
-              title="Cover it back up to scratch again"
             >
-              Re-cover
+              <span>✨</span>
+              <span>Re-seal Card (Scratch Again)</span>
             </button>
+            <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: 0 }}>
+              Valid anytime • Non-transferable • Infinite cuddles included
+            </p>
           </div>
         </section>
 
         {/* 7. Love Letter Signed by Shubham */}
-        <section className="card">
-          <h2 style={{ fontSize: '20px', color: 'var(--primary-dark)', marginBottom: '12px', fontWeight: 700 }}>
-            A Little Note for You 💌
-          </h2>
+        <section className="card" id="loveLetterSection">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px' }}>
+            <h2 style={{ fontSize: '20px', color: 'var(--primary-dark)', fontWeight: 700, margin: 0 }}>
+              A Little Note for You 💌
+            </h2>
+          </div>
+
           <div className="letter-paper" ref={letterPaperRef}>
-            <p>{letterText}</p>
+            <div style={{ minHeight: '100px', lineHeight: 1.7 }}>
+              {letterText || fullLetter}
+            </div>
             <div className="letter-sign">
               Forever Yours,<br />
               Shubham ❤️
